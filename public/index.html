@@ -239,24 +239,44 @@ document.querySelectorAll('.cert-item').forEach(c=>c.addEventListener('click',()
   c.querySelector('.cert-check').textContent=c.classList.contains('selected')?'✓':'';
 }));
 
-function buildPrompt(commodity,scope,certs,sender){
+function buildSupplierPrompt(commodity,scope,certs){
   const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
   const certText=certs.length?`Required certifications: ${certs.join(', ')}.`:'No specific certifications required.';
-  const senderText=sender||'a sourcing analyst';
   return `You are an expert sourcing analyst with deep knowledge of global supplier networks.
 
 Sourcing: "${commodity}"
 Scope: ${scopeText}
 ${certText}
-Sender: ${senderText}
 
-Return a JSON object with "suppliers" (15-20 items) and "emails" (matching array).
+Return a JSON array of 15-20 supplier objects. Each object must have:
+id (number), name, location (city/state or city/country), website (real URL), source (directory name e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet), specialty (1 sentence), tags (2-4 strings), certs (array, can be empty), fit ("high"/"medium"/"low"), fitReason (1 sentence), url (same as website)
 
-Each supplier: id, name, location, website, source (directory name), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), url
+Prioritize high-fit suppliers first. Return ONLY a valid JSON array. No markdown. No preamble. No object wrapper.`;
+}
 
-Each email: supplierId, to, subject, body (4-6 paragraph professional outreach referencing the supplier's specialty, describing what is sourced, requesting a quote, signed by ${senderText})
+function buildEmailPrompt(commodity,suppliers,sender){
+  const senderText=sender||'a sourcing analyst';
+  const supplierList=suppliers.map(s=>`id:${s.id}, company:${s.name}, location:${s.location}, specialty:${s.specialty}`).join('\n');
+  return `You are a procurement professional writing supplier outreach emails.
 
-Prioritize high-fit suppliers. Return ONLY valid JSON. No markdown. No preamble.`;
+Commodity being sourced: "${commodity}"
+Signed by: ${senderText}
+
+Write one outreach email for each supplier below. Return a JSON array of email objects, each with:
+supplierId, to (company name), subject (compelling professional subject line), body (4-5 paragraph email that opens with a specific reference to the supplier's specialty, describes what is being sourced, requests a quote or capability statement, and is signed by ${senderText})
+
+Suppliers:
+${supplierList}
+
+Return ONLY a valid JSON array. No markdown. No preamble. No object wrapper.`;
+}
+
+async function callAPI(payload){
+  const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await res.json();
+  let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  raw=raw.replace(/```json|```/g,'').trim();
+  return JSON.parse(raw);
 }
 
 async function runSearch(){
@@ -283,22 +303,23 @@ async function runSearch(){
   },950);
 
   try{
-    const res=await fetch('/api/search',{
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:8000,
-        system:'Return only valid JSON. No markdown. No preamble.',
-        messages:[{role:'user',content:buildPrompt(commodity,scope,certs,sender)}]
-      })
+    // Call 1: get suppliers
+    suppliers=await callAPI({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:4000,
+      system:'Return only a valid JSON array. No markdown. No preamble.',
+      messages:[{role:'user',content:buildSupplierPrompt(commodity,scope,certs)}]
     });
+
+    // Call 2: get emails
+    emails=await callAPI({
+      model:'claude-sonnet-4-20250514',
+      max_tokens:6000,
+      system:'Return only a valid JSON array. No markdown. No preamble.',
+      messages:[{role:'user',content:buildEmailPrompt(commodity,suppliers,sender)}]
+    });
+
     clearInterval(interval);
-    const data=await res.json();
-    let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-    raw=raw.replace(/```json|```/g,'').trim();
-    const parsed=JSON.parse(raw);
-    suppliers=parsed.suppliers||[]; emails=parsed.emails||[];
     lp.classList.remove('active');
     renderResults(commodity);
   }catch(err){
