@@ -1,0 +1,395 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplierScout — AI Sourcing Intelligence</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  :root {
+    --bg:#0a0b0d; --surface:#111318; --surface2:#181c24;
+    --border:#1e2330; --border2:#2a3040;
+    --accent:#e8a020; --accent2:#f0c060;
+    --text:#d8dde8; --text2:#7a8499; --text3:#4a5268;
+    --green:#2ecc71; --red:#e74c3c; --blue:#4a9eff;
+  }
+  body { background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
+  body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
+  .app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:28px 20px 80px; }
+
+  header { display:flex; align-items:flex-end; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:36px; }
+  .logo { display:flex; align-items:center; gap:10px; }
+  .logo-mark { width:32px; height:32px; background:var(--accent); clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%); display:flex; align-items:center; justify-content:center; font-family:'Syne',sans-serif; font-weight:800; font-size:14px; color:var(--bg); }
+  .logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.5px; }
+  .logo-text span { color:var(--accent); }
+  .header-meta { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:right; line-height:1.7; }
+
+  .section-label { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:10px; }
+  .stages { display:flex; margin-bottom:32px; }
+  .stage { padding:5px 12px; border:1px solid var(--border); border-right:none; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface); }
+  .stage:last-child { border-right:1px solid var(--border); }
+  .stage.active { color:var(--accent); background:rgba(232,160,32,0.06); border-color:var(--accent); }
+
+  .input-block { margin-bottom:20px; }
+  .input-block label { display:block; font-size:13px; color:var(--text2); margin-bottom:8px; }
+  textarea, input[type="text"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
+  textarea:focus, input:focus { border-color:var(--accent); }
+  textarea::placeholder, input::placeholder { color:var(--text3); }
+
+  .pill-group { display:flex; gap:8px; flex-wrap:wrap; }
+  .pill { padding:7px 15px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; user-select:none; }
+  .pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
+
+  .cert-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); gap:7px; }
+  .cert-item { display:flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:12px; color:var(--text2); transition:all 0.2s; user-select:none; }
+  .cert-item.selected { border-color:var(--accent); background:rgba(232,160,32,0.07); color:var(--accent); }
+  .cert-check { width:11px; height:11px; border:1px solid currentColor; display:flex; align-items:center; justify-content:center; font-size:8px; flex-shrink:0; }
+
+  .btn-launch { display:flex; align-items:center; gap:10px; background:var(--accent); color:var(--bg); border:none; padding:13px 26px; font-family:'Syne',sans-serif; font-weight:700; font-size:14px; cursor:pointer; clip-path:polygon(0 0,100% 0,100% 75%,94% 100%,0 100%); transition:background 0.2s; }
+  .btn-launch:hover { background:var(--accent2); }
+  .btn-launch:disabled { background:var(--border2); color:var(--text3); cursor:not-allowed; }
+  .error-panel { background:rgba(231,76,60,0.08); border:1px solid var(--red); padding:11px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red); margin-top:14px; display:none; }
+  .error-panel.active { display:block; }
+
+  .loading-panel { background:var(--surface); border:1px solid var(--border2); padding:36px 28px; text-align:center; display:none; }
+  .loading-panel.active { display:block; }
+  .loader-bar { height:2px; background:var(--border); margin:18px auto; width:260px; position:relative; overflow:hidden; }
+  .loader-bar::after { content:''; position:absolute; left:-100%; top:0; bottom:0; width:60%; background:linear-gradient(90deg,transparent,var(--accent),transparent); animation:sweep 1.4s ease-in-out infinite; }
+  @keyframes sweep { to { left:150%; } }
+  .loader-status { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text2); }
+  .loader-step { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); margin-top:5px; opacity:0; transition:opacity 0.4s,color 0.4s; }
+  .loader-step.visible { opacity:1; color:var(--text2); }
+  .loader-step.done { color:var(--green); opacity:1; }
+
+  .results-panel { display:none; }
+  .results-panel.active { display:block; }
+  .results-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:20px; }
+  .results-title { font-family:'Syne',sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
+  .results-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--accent); background:rgba(232,160,32,0.1); border:1px solid var(--accent); padding:3px 10px; }
+
+  .tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:20px; }
+  .tab { padding:9px 18px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; color:var(--text3); background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+  .supplier-card { background:var(--surface); border:1px solid var(--border); padding:13px 16px; display:grid; grid-template-columns:26px 1fr auto; gap:12px; align-items:start; cursor:pointer; margin-bottom:2px; transition:border-color 0.2s; }
+  .supplier-card:hover { border-color:var(--border2); }
+  .supplier-card.expanded { border-color:var(--accent); }
+  .card-num { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); padding-top:2px; }
+  .card-name { font-family:'Syne',sans-serif; font-weight:600; font-size:15px; margin-bottom:3px; }
+  .card-meta { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+  .card-location { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); }
+  .card-source { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); padding:2px 6px; }
+  .card-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+  .tag { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 7px; border:1px solid var(--border2); color:var(--text3); }
+  .tag.cert { border-color:var(--blue); color:var(--blue); }
+  .card-expand { display:none; grid-column:1/-1; padding-top:12px; margin-top:10px; border-top:1px solid var(--border); }
+  .supplier-card.expanded .card-expand { display:block; }
+  .card-expand p { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:7px; }
+  .card-expand .note { font-size:12px; color:var(--text3); font-style:italic; }
+  .card-url { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent); text-decoration:none; }
+  .card-url:hover { text-decoration:underline; }
+  .fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
+  .fit-high { color:var(--green); border-color:var(--green); background:rgba(46,204,113,0.08); }
+  .fit-med { color:var(--accent); border-color:var(--accent); background:rgba(232,160,32,0.08); }
+  .fit-low { color:var(--text3); border-color:var(--border2); }
+
+  .email-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+  .btn-sm { padding:7px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--text2); transition:all 0.2s; }
+  .btn-sm:hover { border-color:var(--accent); color:var(--accent); }
+  .btn-sm.primary { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
+  .btn-reset { padding:6px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text3); transition:all 0.2s; }
+  .btn-reset:hover { color:var(--text2); }
+
+  .email-card { background:var(--surface); border:1px solid var(--border); margin-bottom:5px; }
+  .email-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; }
+  .email-card.open .email-header { border-bottom:1px solid var(--border); }
+  .email-to { font-family:'Syne',sans-serif; font-weight:600; font-size:14px; }
+  .email-subject { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); margin-top:3px; }
+  .email-chevron { color:var(--text3); font-size:12px; transition:transform 0.2s; }
+  .email-card.open .email-chevron { transform:rotate(180deg); }
+  .email-body { display:none; padding:14px 16px; }
+  .email-card.open .email-body { display:block; }
+  .email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
+  .email-actions { display:flex; gap:8px; margin-top:12px; }
+
+  .toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--accent); color:var(--accent); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 18px; opacity:0; transform:translateY(8px); transition:all 0.3s; pointer-events:none; z-index:999; }
+  .toast.show { opacity:1; transform:translateY(0); }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+  .fade-in { animation:fadeIn 0.3s ease; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="logo-mark">S</div>
+      <div class="logo-text">Supplier<span>Scout</span></div>
+    </div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB / DANNY</div>
+  </header>
+
+  <!-- INPUT -->
+  <div id="inputPanel">
+    <div class="section-label">// NEW SOURCING REQUEST</div>
+    <div class="stages">
+      <div class="stage active">01 DESCRIBE</div>
+      <div class="stage">02 CONFIGURE</div>
+      <div class="stage">03 DISCOVER</div>
+      <div class="stage">04 CAMPAIGN</div>
+    </div>
+
+    <div class="input-block">
+      <label>Describe what you're sourcing — part number, commodity, spec, or plain language</label>
+      <textarea id="commodityInput" rows="4" placeholder="e.g. CNC machined aluminum brackets, 6061-T6, ~500 units/month, tolerances ±0.005&quot;. Or: stainless steel hex bolts M8 x 1.25, grade A2-70, high volume."></textarea>
+    </div>
+
+    <div class="input-block">
+      <label>Sourcing scope</label>
+      <div class="pill-group" id="scopePills">
+        <div class="pill selected" data-val="domestic">🇺🇸 Domestic Only</div>
+        <div class="pill" data-val="foreign">🌏 International Only</div>
+        <div class="pill" data-val="both">🌐 Both</div>
+      </div>
+    </div>
+
+    <div class="input-block">
+      <label>Certifications required <span style="color:var(--text3)">(optional)</span></label>
+      <div class="cert-grid" id="certGrid">
+        <div class="cert-item" data-val="ISO 9001"><div class="cert-check"></div>ISO 9001</div>
+        <div class="cert-item" data-val="AS9100"><div class="cert-check"></div>AS9100</div>
+        <div class="cert-item" data-val="IATF 16949"><div class="cert-check"></div>IATF 16949</div>
+        <div class="cert-item" data-val="ISO 13485"><div class="cert-check"></div>ISO 13485</div>
+        <div class="cert-item" data-val="NADCAP"><div class="cert-check"></div>NADCAP</div>
+        <div class="cert-item" data-val="ITAR"><div class="cert-check"></div>ITAR</div>
+        <div class="cert-item" data-val="RoHS"><div class="cert-check"></div>RoHS</div>
+        <div class="cert-item" data-val="UL Listed"><div class="cert-check"></div>UL Listed</div>
+      </div>
+    </div>
+
+    <div class="input-block">
+      <label>Your name &amp; company <span style="color:var(--text3)">(used in outreach emails)</span></label>
+      <input type="text" id="senderInfo" placeholder="e.g. Danny Gambill, Sioux Chief Manufacturing" />
+    </div>
+
+    <button class="btn-launch" id="launchBtn" onclick="runSearch()">
+      <span>FIND SUPPLIERS</span><span style="font-size:17px">→</span>
+    </button>
+    <div class="error-panel" id="errorPanel"></div>
+  </div>
+
+  <!-- LOADING -->
+  <div class="loading-panel" id="loadingPanel">
+    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:16px;margin-bottom:8px;">Searching supplier networks...</div>
+    <div class="loader-bar"></div>
+    <div class="loader-status" id="loaderStatus">Initializing...</div>
+    <div id="loaderSteps" style="margin-top:14px;"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="results-panel" id="resultsPanel">
+    <div class="results-header">
+      <div>
+        <div class="section-label">// SOURCING RESULTS</div>
+        <div class="results-title" id="resultsTitle"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+        <div class="results-count" id="resultsCount"></div>
+        <button class="btn-reset" onclick="reset()">↺ New Search</button>
+      </div>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('suppliers',this)">SUPPLIER LIST</button>
+      <button class="tab" onclick="switchTab('emails',this)">EMAIL CAMPAIGN</button>
+    </div>
+
+    <div id="suppliersTab"><div id="supplierGrid"></div></div>
+    <div id="emailsTab" style="display:none;">
+      <div class="email-controls">
+        <button class="btn-sm primary" onclick="copyAll()">⊕ Copy All Emails</button>
+        <button class="btn-sm" onclick="document.querySelectorAll('.email-card').forEach(c=>c.classList.add('open'))">↓ Expand All</button>
+        <button class="btn-sm" onclick="document.querySelectorAll('.email-card').forEach(c=>c.classList.remove('open'))">↑ Collapse All</button>
+      </div>
+      <div id="emailGrid"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let scope='domestic', certs=[], suppliers=[], emails=[];
+
+const STEPS={
+  domestic:["Querying ThomasNet directory","Scanning MFG.com listings","Checking IndustryNet","Searching Maker's Row","Cross-referencing trade associations","Scoring & ranking supplier fit","Drafting email campaign"],
+  foreign:["Querying ImportYeti trade records","Scanning Kompass global database","Searching Made-in-China","Checking Global Sources & HKTDC","Cross-referencing trade associations","Scoring & ranking supplier fit","Drafting email campaign"],
+  both:["Querying ImportYeti trade records","Scanning ThomasNet & MFG.com","Searching Kompass & Europages","Checking Made-in-China & Global Sources","Cross-referencing trade associations","Scoring & ranking supplier fit","Drafting email campaign"]
+};
+
+document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected'); scope=p.dataset.val;
+}));
+
+document.querySelectorAll('.cert-item').forEach(c=>c.addEventListener('click',()=>{
+  c.classList.toggle('selected');
+  const v=c.dataset.val;
+  certs=certs.includes(v)?certs.filter(x=>x!==v):[...certs,v];
+  c.querySelector('.cert-check').textContent=c.classList.contains('selected')?'✓':'';
+}));
+
+function buildPrompt(commodity,scope,certs,sender){
+  const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
+  const certText=certs.length?`Required certifications: ${certs.join(', ')}.`:'No specific certifications required.';
+  const senderText=sender||'a sourcing analyst';
+  return `You are an expert sourcing analyst with deep knowledge of global supplier networks.
+
+Sourcing: "${commodity}"
+Scope: ${scopeText}
+${certText}
+Sender: ${senderText}
+
+Return a JSON object with "suppliers" (15-20 items) and "emails" (matching array).
+
+Each supplier: id, name, location, website, source (directory name), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), url
+
+Each email: supplierId, to, subject, body (4-6 paragraph professional outreach referencing the supplier's specialty, describing what is sourced, requesting a quote, signed by ${senderText})
+
+Prioritize high-fit suppliers. Return ONLY valid JSON. No markdown. No preamble.`;
+}
+
+async function runSearch(){
+  const commodity=document.getElementById('commodityInput').value.trim();
+  const sender=document.getElementById('senderInfo').value.trim();
+  if(!commodity){showError('Please describe what you are sourcing.');return;}
+  document.getElementById('errorPanel').classList.remove('active');
+  document.getElementById('inputPanel').style.display='none';
+  const lp=document.getElementById('loadingPanel');
+  lp.classList.add('active');
+
+  const steps=STEPS[scope];
+  const stepsEl=document.getElementById('loaderSteps');
+  stepsEl.innerHTML=steps.map(s=>`<div class="loader-step">→ ${s}</div>`).join('');
+  const stepEls=stepsEl.querySelectorAll('.loader-step');
+  let i=0;
+  const interval=setInterval(()=>{
+    if(i<stepEls.length){
+      if(i>0)stepEls[i-1].classList.add('done');
+      stepEls[i].classList.add('visible');
+      document.getElementById('loaderStatus').textContent=steps[i];
+      i++;
+    } else clearInterval(interval);
+  },950);
+
+  try{
+    const res=await fetch('/api/search',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:8000,
+        system:'Return only valid JSON. No markdown. No preamble.',
+        messages:[{role:'user',content:buildPrompt(commodity,scope,certs,sender)}]
+      })
+    });
+    clearInterval(interval);
+    const data=await res.json();
+    let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+    raw=raw.replace(/```json|```/g,'').trim();
+    const parsed=JSON.parse(raw);
+    suppliers=parsed.suppliers||[]; emails=parsed.emails||[];
+    lp.classList.remove('active');
+    renderResults(commodity);
+  }catch(err){
+    clearInterval(interval);
+    lp.classList.remove('active');
+    document.getElementById('inputPanel').style.display='block';
+    showError('Search failed: '+err.message);
+  }
+}
+
+function renderResults(commodity){
+  document.getElementById('resultsPanel').classList.add('active');
+  document.getElementById('resultsTitle').textContent=commodity.length>65?commodity.substring(0,65)+'...':commodity;
+  document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
+
+  const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
+  const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
+
+  const grid=document.getElementById('supplierGrid');
+  grid.innerHTML='';
+  suppliers.forEach(s=>{
+    const d=document.createElement('div');
+    d.className='supplier-card fade-in';
+    const fc=fitColor(s.fit);
+    d.innerHTML=`
+      <div class="card-num">${String(s.id).padStart(2,'0')}</div>
+      <div>
+        <div class="card-name">${s.name}</div>
+        <div class="card-meta"><span class="card-location">📍 ${s.location}</span><span class="card-source">${s.source}</span></div>
+        <div class="card-tags">${(s.tags||[]).map(t=>`<span class="tag">${t}</span>`).join('')}${(s.certs||[]).map(c=>`<span class="tag cert">${c}</span>`).join('')}</div>
+        <div class="card-expand"><p>${s.specialty}</p><p class="note">${s.fitReason}</p><a class="card-url" href="${s.website}" target="_blank">↗ ${s.website}</a></div>
+      </div>
+      <div class="fit-badge fit-${s.fit==='high'?'high':s.fit==='medium'?'med':'low'}" style="color:${fc};border-color:${fc};background:${fc}18">${fitLabel(s.fit)}</div>`;
+    d.addEventListener('click',()=>d.classList.toggle('expanded'));
+    grid.appendChild(d);
+  });
+
+  const eg=document.getElementById('emailGrid');
+  eg.innerHTML='';
+  emails.forEach(e=>{
+    const d=document.createElement('div');
+    d.className='email-card';
+    d.innerHTML=`
+      <div class="email-header" onclick="this.parentElement.classList.toggle('open')">
+        <div><div class="email-to">${e.to}</div><div class="email-subject">${e.subject}</div></div>
+        <span class="email-chevron">▼</span>
+      </div>
+      <div class="email-body">
+        <div class="email-text">${e.body.replace(/</g,'&lt;')}</div>
+        <div class="email-actions">
+          <button class="btn-sm" onclick="copyText(\`${e.body.replace(/`/g,'\\`').replace(/\$/g,'\\$')}\`)">Copy Email</button>
+          <button class="btn-sm" onclick="copyText(\`${e.subject.replace(/`/g,'\\`')}\`)">Copy Subject</button>
+        </div>
+      </div>`;
+    eg.appendChild(d);
+  });
+}
+
+function switchTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('suppliersTab').style.display=tab==='suppliers'?'block':'none';
+  document.getElementById('emailsTab').style.display=tab==='emails'?'block':'none';
+}
+
+function copyAll(){
+  const all=emails.map((e,i)=>`--- ${i+1}. TO: ${e.to} ---\nSUBJECT: ${e.subject}\n\n${e.body}`).join('\n\n'+'='.repeat(50)+'\n\n');
+  copyText(all); showToast('All emails copied!');
+}
+
+function copyText(text){ navigator.clipboard.writeText(text).then(()=>showToast('Copied!')); }
+
+function showToast(msg){
+  const t=document.getElementById('toast'); t.textContent=msg+' ✓'; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+function showError(msg){ const p=document.getElementById('errorPanel'); p.textContent='⚠ '+msg; p.classList.add('active'); }
+
+function reset(){
+  document.getElementById('resultsPanel').classList.remove('active');
+  document.getElementById('inputPanel').style.display='block';
+  document.getElementById('commodityInput').value='';
+  document.getElementById('senderInfo').value='';
+  scope='domestic'; certs=[];
+  document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
+  document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
+  document.querySelectorAll('.cert-item').forEach(c=>{c.classList.remove('selected');c.querySelector('.cert-check').textContent='';});
+  suppliers=[]; emails=[];
+  switchTab('suppliers',document.querySelector('.tab'));
+}
+</script>
+</body>
+</html>
