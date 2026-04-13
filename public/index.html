@@ -168,6 +168,13 @@
     </div>
 
     <div class="input-block">
+      <div class="cert-item" id="emailToggle" onclick="toggleEmailOption()" style="display:inline-flex;width:auto;padding:9px 14px;border-color:var(--accent);background:rgba(232,160,32,0.07);color:var(--accent);">
+        <div class="cert-check" id="emailCheck" style="border-color:var(--accent);color:var(--accent);">✓</div>
+        Include email campaign <span style="color:var(--text3);margin-left:6px;font-size:11px">(slower)</span>
+      </div>
+    </div>
+
+    <div class="input-block" id="senderBlock">
       <label>Your name &amp; company <span style="color:var(--text3)">(used in outreach emails)</span></label>
       <input type="text" id="senderInfo" placeholder="e.g. Danny Gambill, Sioux Chief Manufacturing" />
     </div>
@@ -201,7 +208,7 @@
 
     <div class="tabs">
       <button class="tab active" onclick="switchTab('suppliers',this)">SUPPLIER LIST</button>
-      <button class="tab" onclick="switchTab('emails',this)">EMAIL CAMPAIGN</button>
+      <button class="tab" id="emailTab" onclick="switchTab('emails',this)" style="display:none;">EMAIL CAMPAIGN</button>
     </div>
 
     <div id="suppliersTab"><div id="supplierGrid"></div></div>
@@ -219,7 +226,7 @@
 <div class="toast" id="toast"></div>
 
 <script>
-let scope='domestic', certs=[], suppliers=[], emails=[];
+let scope='domestic', certs=[], suppliers=[], emails=[], includeEmails=true;
 
 const STEPS={
   domestic:["Querying ThomasNet directory","Scanning MFG.com listings","Checking IndustryNet","Searching Maker's Row","Cross-referencing trade associations","Scoring & ranking supplier fit","Drafting email campaign"],
@@ -227,8 +234,40 @@ const STEPS={
   both:["Querying ImportYeti trade records","Scanning ThomasNet & MFG.com","Searching Kompass & Europages","Checking Made-in-China & Global Sources","Cross-referencing trade associations","Scoring & ranking supplier fit","Drafting email campaign"]
 };
 
+function toggleEmailOption(){
+  includeEmails=!includeEmails;
+  const toggle=document.getElementById('emailToggle');
+  const check=document.getElementById('emailCheck');
+  const senderBlock=document.getElementById('senderBlock');
+  if(includeEmails){
+    toggle.style.borderColor='var(--accent)';toggle.style.background='rgba(232,160,32,0.07)';toggle.style.color='var(--accent)';
+    check.style.borderColor='var(--accent)';check.style.color='var(--accent)';check.textContent='✓';
+    senderBlock.style.display='block';
+  } else {
+    toggle.style.borderColor='var(--border2)';toggle.style.background='var(--surface)';toggle.style.color='var(--text2)';
+    check.style.borderColor='var(--text3)';check.style.color='transparent';check.textContent='';
+    senderBlock.style.display='none';
+  }
+}
+
 document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
-  document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
+  function toggleEmailOption(){
+  includeEmails=!includeEmails;
+  const toggle=document.getElementById('emailToggle');
+  const check=document.getElementById('emailCheck');
+  const senderBlock=document.getElementById('senderBlock');
+  if(includeEmails){
+    toggle.style.borderColor='var(--accent)';toggle.style.background='rgba(232,160,32,0.07)';toggle.style.color='var(--accent)';
+    check.style.borderColor='var(--accent)';check.style.color='var(--accent)';check.textContent='✓';
+    senderBlock.style.display='block';
+  } else {
+    toggle.style.borderColor='var(--border2)';toggle.style.background='var(--surface)';toggle.style.color='var(--text2)';
+    check.style.borderColor='var(--text3)';check.style.color='transparent';check.textContent='';
+    senderBlock.style.display='none';
+  }
+}
+
+document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
   p.classList.add('selected'); scope=p.dataset.val;
 }));
 
@@ -311,13 +350,17 @@ async function runSearch(){
       messages:[{role:'user',content:buildSupplierPrompt(commodity,scope,certs)}]
     });
 
-    // Call 2: get emails
-    emails=await callAPI({
-      model:'claude-sonnet-4-20250514',
-      max_tokens:6000,
-      system:'Return only a valid JSON array. No markdown. No preamble.',
-      messages:[{role:'user',content:buildEmailPrompt(commodity,suppliers,sender)}]
-    });
+    // Call 2: get emails (optional)
+    if(includeEmails){
+      emails=await callAPI({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:6000,
+        system:'Return only a valid JSON array. No markdown. No preamble.',
+        messages:[{role:'user',content:buildEmailPrompt(commodity,suppliers,sender)}]
+      });
+    } else {
+      emails=[];
+    }
 
     clearInterval(interval);
     lp.classList.remove('active');
@@ -334,6 +377,7 @@ function renderResults(commodity){
   document.getElementById('resultsPanel').classList.add('active');
   document.getElementById('resultsTitle').textContent=commodity.length>65?commodity.substring(0,65)+'...':commodity;
   document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
+  document.getElementById('emailTab').style.display=emails.length?'block':'none';
 
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
@@ -405,7 +449,23 @@ function reset(){
   document.getElementById('commodityInput').value='';
   document.getElementById('senderInfo').value='';
   scope='domestic'; certs=[];
-  document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
+  function toggleEmailOption(){
+  includeEmails=!includeEmails;
+  const toggle=document.getElementById('emailToggle');
+  const check=document.getElementById('emailCheck');
+  const senderBlock=document.getElementById('senderBlock');
+  if(includeEmails){
+    toggle.style.borderColor='var(--accent)';toggle.style.background='rgba(232,160,32,0.07)';toggle.style.color='var(--accent)';
+    check.style.borderColor='var(--accent)';check.style.color='var(--accent)';check.textContent='✓';
+    senderBlock.style.display='block';
+  } else {
+    toggle.style.borderColor='var(--border2)';toggle.style.background='var(--surface)';toggle.style.color='var(--text2)';
+    check.style.borderColor='var(--text3)';check.style.color='transparent';check.textContent='';
+    senderBlock.style.display='none';
+  }
+}
+
+document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
   document.querySelectorAll('.cert-item').forEach(c=>{c.classList.remove('selected');c.querySelector('.cert-check').textContent='';});
   suppliers=[]; emails=[];
