@@ -650,6 +650,8 @@ function renderSupplierCards(){
 
     // Website — show even if link may be unreliable, but style as secondary
     const websiteHtml=s.website?'<div style="margin-top:6px;"><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a></div>':'';
+    const sourceUrl=getSourceSearchUrl(s.source,s.name);
+    const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Source: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+'</a></div>';
 
     d.innerHTML=
       '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
@@ -663,6 +665,7 @@ function renderSupplierCards(){
           +'<p class="note">'+s.fitReason+'</p>'
           +contactHtml
           +websiteHtml
+          +sourceHtml
         +'</div>'
       +'</div>'
       +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
