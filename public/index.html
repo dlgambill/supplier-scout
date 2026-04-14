@@ -99,6 +99,8 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .card-meta { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
 .card-location { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); }
 .card-source { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); padding:2px 6px; }
+.card-source-link { text-decoration:none; cursor:pointer; transition:all 0.2s; }
+.card-source-link:hover { color:var(--accent); border-color:var(--accent); background:rgba(232,160,32,0.08); }
 .card-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
 .tag { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 7px; border:1px solid var(--border2); color:var(--text2); }
 .tag.cert { border-color:var(--blue); color:var(--blue); }
@@ -593,6 +595,40 @@ function renderResults(commodity){
   renderEmailCards();
 }
 
+
+function getSourceSearchUrl(source, companyName){
+  const q=encodeURIComponent(companyName);
+  const s=(source||'').toLowerCase();
+  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+encodeURIComponent(companyName)+'/F1/1.html';
+  if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
+  if(s.includes('alibaba'))       return 'https://www.alibaba.com/trade/search?SearchText='+q;
+  if(s.includes('global sources'))return 'https://www.globalsources.com/manufacturers/'+encodeURIComponent(companyName)+'.html?utm_source=search';
+  if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
+  if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
+  if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
+  if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
+  if(s.includes('hktdc'))         return 'https://www.hktdc.com/sourcing/hk_trade_name_directory.htm?lang=en&companyName='+q;
+  if(s.includes('europages'))     return 'https://www.europages.co.uk/companies/'+encodeURIComponent(companyName)+'.html';
+  if(s.includes("maker's row")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
+  return 'https://www.google.com/search?q='+encodeURIComponent(companyName+' '+source+' supplier');
+}
+
+function getSourceSearchUrl(source, companyName){
+  const q=encodeURIComponent(companyName);
+  const s=(source||'').toLowerCase();
+  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+encodeURIComponent(companyName)+'/F1/1.html';
+  if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
+  if(s.includes('alibaba'))       return 'https://www.alibaba.com/trade/search?SearchText='+q;
+  if(s.includes('global sources'))return 'https://www.globalsources.com/manufacturers/'+encodeURIComponent(companyName)+'.html';
+  if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
+  if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
+  if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
+  if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
+  if(s.includes('hktdc'))         return 'https://www.hktdc.com/sourcing/hk_trade_name_directory.htm?lang=en&companyName='+q;
+  if(s.includes('europages'))     return 'https://www.europages.co.uk/companies/'+encodeURIComponent(companyName)+'.html';
+  if(s.includes("maker")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
+  return 'https://www.google.com/search?q='+encodeURIComponent(companyName+' '+source+' supplier');
+}
 function renderSupplierCards(){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
