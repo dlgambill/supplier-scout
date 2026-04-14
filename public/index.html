@@ -51,7 +51,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .error-panel { background:rgba(231,76,60,0.08); border:1px solid var(--red); padding:11px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red); margin-top:14px; display:none; }
 .error-panel.active { display:block; }
 
-/* Loading */
 .loading-panel { background:var(--surface); border:1px solid var(--border2); padding:36px 28px; text-align:center; display:none; }
 .loading-panel.active { display:block; }
 .loader-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:20px; }
@@ -63,7 +62,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .loader-step.visible { opacity:1; color:var(--text2); }
 .loader-step.done { color:var(--green); opacity:1; }
 
-/* Results */
 .results-panel { display:none; }
 .results-panel.active { display:block; }
 .results-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px; }
@@ -79,7 +77,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .tab { padding:9px 18px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; color:var(--text3); background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
 .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
 
-/* Supplier cards */
 .supplier-card { background:var(--surface); border:1px solid var(--border); padding:13px 16px; display:grid; grid-template-columns:20px 26px 1fr auto; gap:10px; align-items:start; margin-bottom:2px; transition:border-color 0.2s; }
 .supplier-card:hover { border-color:var(--border2); }
 .supplier-card.expanded { border-color:var(--accent); }
@@ -103,19 +100,15 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .card-url:hover { text-decoration:underline; }
 .fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
 
-/* Buttons */
 .btn-sm { padding:7px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--text2); transition:all 0.2s; }
 .btn-sm:hover { border-color:var(--accent); color:var(--accent); }
 .btn-sm.primary { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
-.btn-sm.danger { border-color:var(--red); color:var(--red); background:rgba(231,76,60,0.08); }
 .btn-reset { padding:6px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text3); transition:all 0.2s; }
 .btn-reset:hover { color:var(--text2); }
 
-/* Add sources */
 .add-sources-bar { display:flex; gap:8px; margin-top:16px; align-items:center; flex-wrap:wrap; border-top:1px solid var(--border); padding-top:16px; }
 .add-sources-bar input { flex:1; min-width:200px; }
 
-/* Email tab */
 .email-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
 .email-card { background:var(--surface); border:1px solid var(--border); margin-bottom:5px; }
 .email-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; }
@@ -129,19 +122,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
 .email-actions { display:flex; gap:8px; margin-top:12px; }
 
-/* Signature modal */
-.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:500; display:none; align-items:center; justify-content:center; }
-.modal-overlay.active { display:flex; }
-.modal { background:var(--surface); border:1px solid var(--border2); padding:28px; width:90%; max-width:560px; }
-.modal-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:20px; }
-.wysiwyg-toolbar { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
-.wysiwyg-btn { padding:4px 10px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; border:1px solid var(--border2); background:var(--surface2); color:var(--text2); transition:all 0.2s; }
-.wysiwyg-btn:hover { color:var(--accent); border-color:var(--accent); }
-.wysiwyg-editor { min-height:120px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); padding:12px 14px; font-size:13px; line-height:1.6; outline:none; }
-.wysiwyg-editor:focus { border-color:var(--accent); }
-.modal-actions { display:flex; gap:8px; margin-top:16px; justify-content:flex-end; }
-
-/* Toast */
 .toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--accent); color:var(--accent); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 18px; opacity:0; transform:translateY(8px); transition:all 0.3s; pointer-events:none; z-index:999; }
 .toast.show { opacity:1; transform:translateY(0); }
 @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
@@ -158,7 +138,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB</div>
   </header>
 
-  <!-- INPUT PANEL -->
   <div id="inputPanel">
     <div class="section-label">// NEW SOURCING REQUEST</div>
     <div class="stages">
@@ -170,7 +149,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 
     <div class="input-block">
       <label>Describe what you're sourcing — part number, commodity, spec, or plain language</label>
-      <textarea id="commodityInput" rows="4" placeholder="e.g. CNC machined aluminum brackets, 6061-T6, ~500 units/month, tolerances ±0.005&quot;. Or: 0.2mm stainless steel wire, high volume domestic."></textarea>
+      <textarea id="commodityInput" rows="4" placeholder="e.g. CNC machined aluminum brackets, 6061-T6, ~500 units/month, tolerances ±0.005&quot;. Or: 0.2mm stainless steel wire, high volume."></textarea>
     </div>
 
     <div class="input-block">
@@ -182,8 +161,13 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       </div>
     </div>
 
+    <div class="input-block" id="countryBlock" style="display:none;">
+      <label>Countries to source from <span style="color:var(--text3)">(comma separated, e.g. China, Taiwan, Germany, Mexico)</span></label>
+      <input type="text" id="countryInput" placeholder="e.g. China, Taiwan, South Korea, Germany, Mexico..." />
+    </div>
+
     <div class="input-block">
-      <label>Certifications required <span style="color:var(--text3)">(optional — comma separated, e.g. ISO 9001, AS9100, RoHS)</span></label>
+      <label>Certifications required <span style="color:var(--text3)">(comma separated, e.g. ISO 9001, AS9100, RoHS)</span></label>
       <input type="text" id="certInput" placeholder="ISO 9001, AS9100, IATF 16949, RoHS..." />
     </div>
 
@@ -197,13 +181,12 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     <div id="emailOptions">
       <div class="input-block">
         <label>Your name &amp; company <span style="color:var(--text3)">(used in outreach emails)</span></label>
-        <input type="text" id="senderInfo" placeholder="e.g. Danny Gambill, Sioux Chief Manufacturing" />
+        <input type="text" id="senderInfo" placeholder="Your name, Company name" />
       </div>
       <div class="input-block">
         <label>Your email address <span style="color:var(--text3)">(for mailto campaign)</span></label>
-        <input type="text" id="senderEmail" placeholder="e.g. dgambill@siouxchief.com" />
+        <input type="text" id="senderEmail" placeholder="you@yourcompany.com" />
       </div>
-
       <div class="input-block">
         <div id="attachToggle" class="toggle-row" onclick="toggleOpt('attach')">
           <div class="toggle-check">&#10003;</div>
@@ -220,13 +203,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
           </div>
         </div>
       </div>
-
-      <div class="input-block">
-        <div id="sigToggle" class="toggle-row" onclick="openSigEditor()">
-          <div class="toggle-check" id="sigCheck"></div>
-          Add email signature <span style="color:var(--text3);margin-left:6px;font-size:11px">(click to edit)</span>
-        </div>
-      </div>
     </div>
 
     <button class="btn-launch" onclick="runSearch()">
@@ -235,7 +211,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     <div class="error-panel" id="errorPanel"></div>
   </div>
 
-  <!-- LOADING PANEL -->
   <div class="loading-panel" id="loadingPanel">
     <div class="loader-title">Searching supplier networks...</div>
     <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
@@ -243,7 +218,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     <div class="loader-steps" id="loaderSteps"></div>
   </div>
 
-  <!-- RESULTS PANEL -->
   <div class="results-panel" id="resultsPanel">
     <div class="results-header">
       <div>
@@ -276,7 +250,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     <div id="suppliersTab">
       <div id="supplierGrid"></div>
       <div class="add-sources-bar">
-        <input type="text" id="additionalCommodity" placeholder="Search additional sources (same commodity, or refine description)..." />
+        <input type="text" id="additionalCommodity" placeholder="Search additional sources — same commodity or refined description..." />
         <button class="btn-sm primary" onclick="searchAdditional()">&#8853; Search More Sources</button>
       </div>
     </div>
@@ -293,46 +267,38 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
   </div>
 </div>
 
-<!-- SIGNATURE MODAL -->
-<div class="modal-overlay" id="sigModal">
-  <div class="modal">
-    <div class="modal-title">Email Signature Editor</div>
-    <div class="wysiwyg-toolbar">
-      <button class="wysiwyg-btn" onclick="sigCmd('bold')"><b>B</b></button>
-      <button class="wysiwyg-btn" onclick="sigCmd('italic')"><i>I</i></button>
-      <button class="wysiwyg-btn" onclick="sigCmd('underline')"><u>U</u></button>
-      <button class="wysiwyg-btn" onclick="sigCmd('insertUnorderedList')">&#8226; List</button>
-      <button class="wysiwyg-btn" onclick="sigLink()">&#128279; Link</button>
-      <button class="wysiwyg-btn" onclick="sigCmd('removeFormat')">&#10005; Clear</button>
-    </div>
-    <div class="wysiwyg-editor" id="sigEditor" contenteditable="true" placeholder="Type your signature here..."></div>
-    <div class="modal-actions">
-      <button class="btn-sm" onclick="closeSigEditor()">Cancel</button>
-      <button class="btn-sm primary" onclick="saveSig()">Save Signature</button>
-    </div>
-  </div>
-</div>
-
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let scope='domestic', suppliers=[], emails=[], includeEmails=true, includeAttach=false, attachType='spec sheet', sigHTML='', sigSaved=false, fitFilter='all';
+let scope='domestic', suppliers=[], emails=[], includeEmails=true, includeAttach=false, attachType='spec sheet', fitFilter='all';
 
 const STEPS={
-  domestic:["Querying ThomasNet directory","Scanning MFG.com listings","Checking IndustryNet & Maker's Row","Cross-referencing trade associations","Scoring & ranking supplier fit"],
-  foreign:["Querying ImportYeti trade records","Scanning Kompass global database","Searching Made-in-China & Global Sources","Checking HKTDC & Europages","Scoring & ranking supplier fit"],
-  both:["Querying ImportYeti trade records","Scanning ThomasNet & MFG.com","Searching Kompass & Europages","Checking Made-in-China & Global Sources","Scoring & ranking supplier fit"]
+  domestic:["Querying ThomasNet directory","Scanning MFG.com & IndustryNet","Searching Maker's Row & trade associations","Scoring & ranking supplier fit"],
+  foreign:["Querying ImportYeti trade records","Scanning Kompass & Global Sources","Searching Made-in-China & HKTDC","Scoring & ranking supplier fit"],
+  both:["Querying ImportYeti trade records","Scanning ThomasNet & MFG.com","Searching Kompass, Made-in-China & Global Sources","Scoring & ranking supplier fit"]
 };
 
-// Toggle options
+// Scope pills — show/hide country input
+document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected');
+  scope=p.dataset.val;
+  document.getElementById('countryBlock').style.display=(scope==='foreign'||scope==='both')?'block':'none';
+}));
+
+// Attach type pills
+document.querySelectorAll('#attachPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#attachPills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected'); attachType=p.dataset.val;
+}));
+
 function toggleOpt(type){
   if(type==='email'){
     includeEmails=!includeEmails;
     const el=document.getElementById('emailToggle');
-    const opts=document.getElementById('emailOptions');
     el.classList.toggle('on',includeEmails);
     el.querySelector('.toggle-check').innerHTML=includeEmails?'&#10003;':'';
-    opts.style.display=includeEmails?'block':'none';
+    document.getElementById('emailOptions').style.display=includeEmails?'block':'none';
   } else if(type==='attach'){
     includeAttach=!includeAttach;
     const el=document.getElementById('attachToggle');
@@ -342,69 +308,42 @@ function toggleOpt(type){
   }
 }
 
-// Scope pills
-document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
-  document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
-  p.classList.add('selected'); scope=p.dataset.val;
-}));
-
-// Attach type pills
-document.querySelectorAll('#attachPills .pill').forEach(p=>p.addEventListener('click',()=>{
-  document.querySelectorAll('#attachPills .pill').forEach(x=>x.classList.remove('selected'));
-  p.classList.add('selected'); attachType=p.dataset.val;
-}));
-
-// Signature editor
-function openSigEditor(){ document.getElementById('sigModal').classList.add('active'); }
-function closeSigEditor(){ document.getElementById('sigModal').classList.remove('active'); }
-function saveSig(){
-  sigHTML=document.getElementById('sigEditor').innerHTML.trim();
-  sigSaved=sigHTML.length>0;
-  document.getElementById('sigCheck').innerHTML=sigSaved?'&#10003;':'';
-  document.getElementById('sigToggle').classList.toggle('on',sigSaved);
-  closeSigEditor();
-  showToast('Signature saved!');
-}
-function sigCmd(cmd){ document.getElementById('sigEditor').focus(); document.execCommand(cmd,false,null); }
-function sigLink(){
-  const url=prompt('Enter URL:');
-  if(url){ document.getElementById('sigEditor').focus(); document.execCommand('createLink',false,url); }
-}
-
-// Prompts
-function buildSupplierPrompt(commodity,scope,certs){
+function buildSupplierPrompt(commodity,scope,certs,countries){
   const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
   const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
-  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n\nReturn a JSON array of 15-20 supplier objects each with: id (number), name, location, website (real URL), source (e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet, Maker\'s Row), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), url.\n\nPrioritize high-fit first. Return ONLY a valid JSON array. No markdown. No preamble.';
+  const countryText=(countries&&(scope==='foreign'||scope==='both'))?'Preferred countries: '+countries+'.':'';
+  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n\nReturn a JSON array of 15-20 supplier objects each with: id (number), name, location, website (real URL), source (e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), url.\n\nPrioritize high-fit first. Return ONLY a valid JSON array. No markdown. No preamble.';
 }
 
 function buildEmailPrompt(commodity,supList,sender,attach,attachType){
-  const senderText=sender||'a sourcing analyst';
-  const attachNote=attach?'\n\nIMPORTANT: Each email body must include a natural reference to an attached '+attachType+'. Phrase it professionally, e.g. "I have attached our '+attachType+' for your reference" or "Please find the attached '+attachType+'."':'';
-  const list=supList.map(s=>'id:'+s.id+', company:'+s.name+', location:'+s.location+', specialty:'+s.specialty).join('\n');
-  return 'You are a procurement professional writing supplier outreach emails.\n\nCommodity: "'+commodity+'"\nSigned by: '+senderText+attachNote+'\n\nWrite one email per supplier. Return a JSON array with: supplierId, to, subject, body (4-5 paragraphs, references supplier specialty specifically, describes what is being sourced, requests quote or capability statement'+( attach?', mentions attached '+attachType:'')+', signed by '+senderText+').\n\nSuppliers:\n'+list+'\n\nReturn ONLY a valid JSON array. No markdown. No preamble.';
+  const senderText=sender||'Sourcing Team';
+  const attachNote=attach?' Each email must mention the attached '+attachType+' professionally.':'';
+  const list=supList.map(s=>s.id+':'+s.name+' ('+s.location+') - '+s.specialty).join('\n');
+  return 'Write short professional supplier outreach emails.\n\nCommodity: "'+commodity+'"\nFrom: '+senderText+attachNote+'\n\nOne email per supplier. JSON array: supplierId, to, subject, body (3 short paragraphs: intro referencing their specialty, what we need + quote request'+(attach?', mention attached '+attachType:'')+', closing). Sign as '+senderText+'.\n\nSuppliers:\n'+list+'\n\nReturn ONLY a valid JSON array. No markdown.';
 }
 
-// API call
 async function callAPI(payload){
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await res.json();
+  if(data.error) throw new Error(data.error);
   let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
-  raw=raw.replace(/```json|```/g,'').trim();
-  return JSON.parse(raw);
+  raw=raw.replace(/```json[\s\S]*?```/g,m=>m.slice(7,-3)).replace(/```/g,'').trim();
+  const start=raw.indexOf('[');
+  const end=raw.lastIndexOf(']');
+  if(start===-1||end===-1) throw new Error('Invalid response format');
+  return JSON.parse(raw.slice(start,end+1));
 }
 
-// Progress bar
 function setProgress(pct,label){
   document.getElementById('progressFill').style.width=pct+'%';
   document.getElementById('progressLabel').textContent=label;
 }
 
-// Main search
 async function runSearch(){
   const commodity=document.getElementById('commodityInput').value.trim();
   const sender=document.getElementById('senderInfo').value.trim();
   const certs=document.getElementById('certInput').value.trim();
+  const countries=document.getElementById('countryInput').value.trim();
   if(!commodity){showError('Please describe what you are sourcing.');return;}
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
@@ -416,25 +355,38 @@ async function runSearch(){
   const stepsEl=document.getElementById('loaderSteps');
   stepsEl.innerHTML=baseSteps.map(s=>'<div class="loader-step">&#8594; '+s+'</div>').join('');
   const stepEls=stepsEl.querySelectorAll('.loader-step');
+  const supplierStepCount=baseSteps.length-(includeEmails?1:0);
   const supplierPct=includeEmails?60:100;
   let i=0;
-  const supplierStepCount=baseSteps.length-(includeEmails?1:0);
-
   const interval=setInterval(()=>{
     if(i<stepEls.length){
-      if(i>0)stepEls[i-1].classList.add('done');
+      if(i>0) stepEls[i-1].classList.add('done');
       stepEls[i].classList.add('visible');
-      const pct=i<supplierStepCount?Math.round((i+1)/supplierStepCount*supplierPct):Math.round(supplierPct+((i-supplierStepCount+1)/1)*(100-supplierPct));
-      setProgress(Math.min(pct,95),baseSteps[i]);
+      const pct=i<supplierStepCount?Math.round((i+1)/supplierStepCount*supplierPct):Math.round(supplierPct+((i-supplierStepCount+1))*(100-supplierPct));
+      setProgress(Math.min(pct,92),baseSteps[i]);
       i++;
     } else clearInterval(interval);
   },950);
 
   try{
-    suppliers=await callAPI({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildSupplierPrompt(commodity,scope,certs)}]});
+    suppliers=await callAPI({
+      model:'claude-haiku-4-5-20251001',
+      max_tokens:4000,
+      system:'Return only a valid JSON array. No markdown. No preamble.',
+      messages:[{role:'user',content:buildSupplierPrompt(commodity,scope,certs,countries)}]
+    });
+
     if(includeEmails){
-      emails=await callAPI({model:'claude-haiku-4-5-20251001',max_tokens:6000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildEmailPrompt(commodity,suppliers,sender,includeAttach,attachType)}]});
+      // Send only top 10 to email prompt to keep tokens manageable
+      const topSuppliers=suppliers.slice(0,10);
+      emails=await callAPI({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:6000,
+        system:'Return only a valid JSON array. No markdown. No preamble.',
+        messages:[{role:'user',content:buildEmailPrompt(commodity,topSuppliers,sender,includeAttach,attachType)}]
+      });
     } else { emails=[]; }
+
     clearInterval(interval);
     setProgress(100,'Complete!');
     setTimeout(()=>{
@@ -449,20 +401,23 @@ async function runSearch(){
   }
 }
 
-// Search additional sources
 async function searchAdditional(){
   const addCommodity=document.getElementById('additionalCommodity').value.trim();
   const certs=document.getElementById('certInput').value.trim();
+  const countries=document.getElementById('countryInput').value.trim();
   if(!addCommodity){showToast('Enter a description to search');return;}
   const btn=document.querySelector('.add-sources-bar .btn-sm');
   btn.textContent='Searching...';btn.disabled=true;
   try{
-    const newSuppliers=await callAPI({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildSupplierPrompt(addCommodity,scope,certs)}]});
-    // Deduplicate by name and website
-    const existingKeys=new Set(suppliers.map(s=>s.name.toLowerCase().trim()));
+    const newSuppliers=await callAPI({
+      model:'claude-haiku-4-5-20251001',
+      max_tokens:4000,
+      system:'Return only a valid JSON array. No markdown. No preamble.',
+      messages:[{role:'user',content:buildSupplierPrompt(addCommodity,scope,certs,countries)}]
+    });
+    const existingNames=new Set(suppliers.map(s=>s.name.toLowerCase().trim()));
     const existingUrls=new Set(suppliers.map(s=>(s.website||'').toLowerCase().trim()));
-    const fresh=newSuppliers.filter(s=>!existingKeys.has(s.name.toLowerCase().trim())&&!existingUrls.has((s.website||'').toLowerCase().trim()));
-    // Renumber
+    const fresh=newSuppliers.filter(s=>!existingNames.has(s.name.toLowerCase().trim())&&!existingUrls.has((s.website||'').toLowerCase().trim()));
     const startId=suppliers.length+1;
     fresh.forEach((s,i)=>s.id=startId+i);
     suppliers=[...suppliers,...fresh];
@@ -474,7 +429,6 @@ async function searchAdditional(){
   btn.textContent='&#8853; Search More Sources';btn.disabled=false;
 }
 
-// Fit filter
 function setFitFilter(val,el){
   fitFilter=val;
   document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
@@ -492,7 +446,6 @@ function applyFitFilter(){
   });
 }
 
-// Select all/none
 function selectAll(val){
   document.querySelectorAll('.supplier-card:not(.hidden) .card-checkbox input').forEach(cb=>cb.checked=val);
 }
@@ -506,7 +459,6 @@ function getSelectedSuppliers(){
   return selected.filter(Boolean);
 }
 
-// Render
 function renderResults(commodity){
   document.getElementById('resultsPanel').classList.add('active');
   document.getElementById('resultsTitle').textContent=commodity.length>65?commodity.substring(0,65)+'...':commodity;
@@ -524,8 +476,7 @@ function renderSupplierCards(){
   suppliers.forEach(s=>{
     const d=document.createElement('div');
     d.className='supplier-card fade-in';
-    d.dataset.id=s.id;
-    d.dataset.fit=s.fit;
+    d.dataset.id=s.id; d.dataset.fit=s.fit;
     const fc=fitColor(s.fit);
     const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
     d.innerHTML='<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div><div class="card-num">'+String(s.id).padStart(2,'0')+'</div><div class="card-body"><div class="card-name">'+s.name+'</div><div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div><div class="card-tags">'+tags+'</div><div class="card-expand"><p>'+s.specialty+'</p><p class="note">'+s.fitReason+'</p><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a></div></div><div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
@@ -557,29 +508,24 @@ function switchTab(tab,el){
   document.getElementById('emailsTab').style.display=tab==='emails'?'block':'none';
 }
 
-// Email campaign via mailto BCC
 function launchEmailCampaign(){
   const senderEmail=document.getElementById('senderEmail').value.trim();
   const selected=getSelectedSuppliers();
   const selectedEmails=emails.filter(e=>selected.find(s=>s.id===e.supplierId));
-  if(!selectedEmails.length){showToast('No selected suppliers with emails');return;}
-  const bcc=selectedEmails.map(e=>{const s=selected.find(x=>x.id===e.supplierId);return s?s.name+' <'+s.website.replace(/https?:\/\//,'').split('/')[0]+'>':''}).filter(Boolean).join(',');
-  const firstEmail=selectedEmails[0];
-  let body=firstEmail.body;
-  if(sigSaved){
-    const sigText=document.getElementById('sigEditor').innerText;
-    body+='\n\n'+sigText;
-  }
-  const mailto='mailto:'+encodeURIComponent(senderEmail)+'?bcc='+encodeURIComponent(selectedEmails.map(()=>'').join(','))+'&subject='+encodeURIComponent(firstEmail.subject)+'&body='+encodeURIComponent(body);
+  const src=selectedEmails.length?selectedEmails:emails;
+  if(!src.length){showToast('No emails to send');return;}
+  const first=src[0];
+  let body=first.body;
+  const bccList=src.map(e=>e.to).join(', ');
+  const mailto='mailto:'+encodeURIComponent(senderEmail)+'?bcc='+encodeURIComponent(bccList)+'&subject='+encodeURIComponent(first.subject)+'&body='+encodeURIComponent(body);
   window.location.href=mailto;
   showToast('Opening email client...');
 }
 
 function copyAll(){
   const sel=getSelectedSuppliers();
-  const selEmails=emails.filter(e=>sel.find(s=>s.id===e.supplierId));
-  const src=selEmails.length?selEmails:emails;
-  const all=src.map((e,i)=>'--- '+(i+1)+'. TO: '+e.to+' ---\nSUBJECT: '+e.subject+'\n\n'+e.body).join('\n\n'+'='.repeat(50)+'\n\n');
+  const selEmails=sel.length?emails.filter(e=>sel.find(s=>s.id===e.supplierId)):emails;
+  const all=selEmails.map((e,i)=>'--- '+(i+1)+'. TO: '+e.to+' ---\nSUBJECT: '+e.subject+'\n\n'+e.body).join('\n\n'+'='.repeat(50)+'\n\n');
   copyText(all); showToast('Emails copied!');
 }
 
@@ -638,7 +584,9 @@ function reset(){
   document.getElementById('senderInfo').value='';
   document.getElementById('senderEmail').value='';
   document.getElementById('certInput').value='';
+  document.getElementById('countryInput').value='';
   document.getElementById('additionalCommodity').value='';
+  document.getElementById('countryBlock').style.display='none';
   scope='domestic'; fitFilter='all';
   document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
