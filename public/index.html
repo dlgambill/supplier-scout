@@ -399,9 +399,16 @@ async function callAPI(payload){
   if(data.error) throw new Error(data.error);
   let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
   raw=raw.replace(/```json[\s\S]*?```/g,m=>m.slice(7,-3)).replace(/```/g,'').trim();
-  // Try array first, then object
-  const start=raw.indexOf('[')!==-1?raw.indexOf('['):raw.indexOf('{');
-  const end=raw.lastIndexOf(']')!==-1?raw.lastIndexOf(']'):raw.lastIndexOf('}');
+  // Find outermost JSON structure — prefer { if it appears before [
+  const firstBrace=raw.indexOf('{');
+  const firstBracket=raw.indexOf('[');
+  let start, end;
+  if(firstBrace===-1 && firstBracket===-1) throw new Error('Invalid response format');
+  if(firstBrace!==-1 && (firstBracket===-1 || firstBrace<firstBracket)){
+    start=firstBrace; end=raw.lastIndexOf('}');
+  } else {
+    start=firstBracket; end=raw.lastIndexOf(']');
+  }
   if(start===-1||end===-1) throw new Error('Invalid response format');
   return JSON.parse(raw.slice(start,end+1));
 }
