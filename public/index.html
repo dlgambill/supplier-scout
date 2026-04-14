@@ -596,38 +596,22 @@ function renderResults(commodity){
 }
 
 
-function getSourceSearchUrl(source, companyName){
-  const q=encodeURIComponent(companyName);
-  const s=(source||'').toLowerCase();
-  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+encodeURIComponent(companyName)+'/F1/1.html';
-  if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
-  if(s.includes('alibaba'))       return 'https://www.alibaba.com/trade/search?SearchText='+q;
-  if(s.includes('global sources'))return 'https://www.globalsources.com/manufacturers/'+encodeURIComponent(companyName)+'.html?utm_source=search';
-  if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
-  if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
-  if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
-  if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
-  if(s.includes('hktdc'))         return 'https://www.hktdc.com/sourcing/hk_trade_name_directory.htm?lang=en&companyName='+q;
-  if(s.includes('europages'))     return 'https://www.europages.co.uk/companies/'+encodeURIComponent(companyName)+'.html';
-  if(s.includes("maker's row")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
-  return 'https://www.google.com/search?q='+encodeURIComponent(companyName+' '+source+' supplier');
-}
 
-function getSourceSearchUrl(source, companyName){
-  const q=encodeURIComponent(companyName);
+function getSourceSearchUrl(source, commodity){
+  const q=encodeURIComponent(commodity);
   const s=(source||'').toLowerCase();
-  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+encodeURIComponent(companyName)+'/F1/1.html';
+  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+q+'/F1/1.html';
   if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
   if(s.includes('alibaba'))       return 'https://www.alibaba.com/trade/search?SearchText='+q;
-  if(s.includes('global sources'))return 'https://www.globalsources.com/manufacturers/'+encodeURIComponent(companyName)+'.html';
+  if(s.includes('global sources'))return 'https://www.globalsources.com/si/AS/Search/g/'+q+'.html';
   if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
   if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
   if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
   if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
   if(s.includes('hktdc'))         return 'https://www.hktdc.com/sourcing/hk_trade_name_directory.htm?lang=en&companyName='+q;
-  if(s.includes('europages'))     return 'https://www.europages.co.uk/companies/'+encodeURIComponent(companyName)+'.html';
+  if(s.includes('europages'))     return 'https://www.europages.co.uk/en/pg/'+q+'-0.html';
   if(s.includes("maker")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
-  return 'https://www.google.com/search?q='+encodeURIComponent(companyName+' '+source+' supplier');
+  return 'https://www.google.com/search?q='+q+'+supplier';
 }
 function renderSupplierCards(){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
@@ -650,7 +634,7 @@ function renderSupplierCards(){
 
     // Website — show even if link may be unreliable, but style as secondary
     const websiteHtml=s.website?'<div style="margin-top:6px;"><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a></div>':'';
-    const sourceUrl=getSourceSearchUrl(s.source,s.name);
+    const sourceUrl=getSourceSearchUrl(s.source,currentCommodity);
     const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Source: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+'</a></div>';
 
     d.innerHTML=
