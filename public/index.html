@@ -385,7 +385,7 @@ function buildSupplierPrompt(commodity,scope,certs,countries,hts){
   const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
   const countryText=(countries&&(scope==='foreign'||scope==='both'))?'Preferred countries: '+countries+'.':'';
   const htsText=hts?'HTS Code: '+hts+' — use this to refine commodity classification and identify suppliers that commonly trade this code.':'';
-  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of 15-20 supplier objects each with: id (number), name, location, website (real URL), source (e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), contactName (a plausible contact name for the sales or sourcing department), contactEmail (a plausible contact email based on the company domain and contact name).\n\nPrioritize high-fit first. Return ONLY a valid JSON array. No markdown. No preamble.';
+  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of exactly 10 supplier objects each with: id (number), name, location, website (real URL), source (e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), contactName (a plausible contact name for the sales or sourcing department), contactEmail (a plausible contact email based on the company domain and contact name).\n\nPrioritize high-fit first. Return ONLY a valid JSON array. No markdown. No preamble.';
 }
 
 function buildEmailPrompt(commodity,attach,attachList){
@@ -469,7 +469,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   try{
     const supplierPayload={
       model:'claude-haiku-4-5-20251001',
-      max_tokens:4000,
+      max_tokens:6000,
       system:'Return only a valid JSON array. No markdown. No preamble.',
       messages:[{role:'user',content:buildSupplierPrompt(commodity,searchScope,certs,countries,hts)}]
     };
