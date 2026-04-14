@@ -597,8 +597,21 @@ function renderResults(commodity){
 
 
 
-function getSourceSearchUrl(source, commodity){
-  const q=encodeURIComponent(commodity);
+function buildSearchQuery(){
+  // Build a clean product search string from commodity + HTS + certs + countries
+  // Never include company names — only product/commodity terms
+  let parts=[];
+  if(currentCommodity && currentCommodity!=='[see attached image]'){
+    // Take first 60 chars to keep URLs clean
+    parts.push(currentCommodity.substring(0,60));
+  }
+  if(currentHts) parts.push('HTS '+currentHts);
+  return parts.join(' ').trim();
+}
+
+function getSourceSearchUrl(source){
+  const query=buildSearchQuery();
+  const q=encodeURIComponent(query);
   const s=(source||'').toLowerCase();
   if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+q+'/F1/1.html';
   if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
@@ -634,7 +647,7 @@ function renderSupplierCards(){
 
     // Website — show even if link may be unreliable, but style as secondary
     const websiteHtml=s.website?'<div style="margin-top:6px;"><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a></div>':'';
-    const sourceUrl=getSourceSearchUrl(s.source,currentCommodity);
+    const sourceUrl=getSourceSearchUrl(s.source);
     const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Source: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+'</a></div>';
 
     d.innerHTML=
