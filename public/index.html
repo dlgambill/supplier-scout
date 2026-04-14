@@ -4,103 +4,148 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>SupplierScout — AI Sourcing Intelligence</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='0,0 32,0 32,22 22,32 0,32' fill='%23e8a020'/%3E%3Ctext x='7' y='23' font-family='Arial' font-weight='900' font-size='20' fill='%230a0b0d'%3ES%3C/text%3E%3C/svg%3E">
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400&display=swap" rel="stylesheet">
 <style>
-  * { margin:0; padding:0; box-sizing:border-box; }
-  :root {
-    --bg:#0a0b0d; --surface:#111318; --surface2:#181c24;
-    --border:#1e2330; --border2:#2a3040;
-    --accent:#e8a020; --accent2:#f0c060;
-    --text:#d8dde8; --text2:#7a8499; --text3:#4a5268;
-    --green:#2ecc71; --red:#e74c3c; --blue:#4a9eff;
-  }
-  body { background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
-  body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
-  .app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:28px 20px 80px; }
-  header { display:flex; align-items:flex-end; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:36px; }
-  .logo { display:flex; align-items:center; gap:10px; }
-  .logo-mark { width:32px; height:32px; background:var(--accent); clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%); display:flex; align-items:center; justify-content:center; font-family:'Syne',sans-serif; font-weight:800; font-size:14px; color:var(--bg); }
-  .logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.5px; }
-  .logo-text span { color:var(--accent); }
-  .header-meta { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:right; line-height:1.7; }
-  .section-label { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:10px; }
-  .stages { display:flex; margin-bottom:32px; }
-  .stage { padding:5px 12px; border:1px solid var(--border); border-right:none; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface); }
-  .stage:last-child { border-right:1px solid var(--border); }
-  .stage.active { color:var(--accent); background:rgba(232,160,32,0.06); border-color:var(--accent); }
-  .input-block { margin-bottom:20px; }
-  .input-block label { display:block; font-size:13px; color:var(--text2); margin-bottom:8px; }
-  textarea, input[type="text"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
-  textarea:focus, input:focus { border-color:var(--accent); }
-  textarea::placeholder, input::placeholder { color:var(--text3); }
-  .pill-group { display:flex; gap:8px; flex-wrap:wrap; }
-  .pill { padding:7px 15px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; user-select:none; }
-  .pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
-  .cert-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(115px,1fr)); gap:7px; }
-  .cert-item { display:flex; align-items:center; gap:7px; padding:7px 10px; border:1px solid var(--border); background:var(--surface); cursor:pointer; font-size:12px; color:var(--text2); transition:all 0.2s; user-select:none; }
-  .cert-item.selected { border-color:var(--accent); background:rgba(232,160,32,0.07); color:var(--accent); }
-  .cert-check { width:11px; height:11px; border:1px solid currentColor; display:flex; align-items:center; justify-content:center; font-size:8px; flex-shrink:0; }
-  .btn-launch { display:flex; align-items:center; gap:10px; background:var(--accent); color:var(--bg); border:none; padding:13px 26px; font-family:'Syne',sans-serif; font-weight:700; font-size:14px; cursor:pointer; clip-path:polygon(0 0,100% 0,100% 75%,94% 100%,0 100%); transition:background 0.2s; }
-  .btn-launch:hover { background:var(--accent2); }
-  .error-panel { background:rgba(231,76,60,0.08); border:1px solid var(--red); padding:11px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red); margin-top:14px; display:none; }
-  .error-panel.active { display:block; }
-  .loading-panel { background:var(--surface); border:1px solid var(--border2); padding:36px 28px; text-align:center; display:none; }
-  .loading-panel.active { display:block; }
-  .loader-bar { height:2px; background:var(--border); margin:18px auto; width:260px; position:relative; overflow:hidden; }
-  .loader-bar::after { content:''; position:absolute; left:-100%; top:0; bottom:0; width:60%; background:linear-gradient(90deg,transparent,var(--accent),transparent); animation:sweep 1.4s ease-in-out infinite; }
-  @keyframes sweep { to { left:150%; } }
-  .loader-status { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--text2); }
-  .loader-step { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); margin-top:5px; opacity:0; transition:opacity 0.4s,color 0.4s; }
-  .loader-step.visible { opacity:1; color:var(--text2); }
-  .loader-step.done { color:var(--green); opacity:1; }
-  .results-panel { display:none; }
-  .results-panel.active { display:block; }
-  .results-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px; }
-  .results-title { font-family:'Syne',sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
-  .results-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--accent); background:rgba(232,160,32,0.1); border:1px solid var(--accent); padding:3px 10px; }
-  .results-actions { display:flex; gap:8px; margin-bottom:18px; flex-wrap:wrap; }
-  .tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:20px; }
-  .tab { padding:9px 18px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; color:var(--text3); background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
-  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
-  .supplier-card { background:var(--surface); border:1px solid var(--border); padding:13px 16px; display:grid; grid-template-columns:26px 1fr auto; gap:12px; align-items:start; cursor:pointer; margin-bottom:2px; transition:border-color 0.2s; }
-  .supplier-card:hover { border-color:var(--border2); }
-  .supplier-card.expanded { border-color:var(--accent); }
-  .card-num { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); padding-top:2px; }
-  .card-name { font-family:'Syne',sans-serif; font-weight:600; font-size:15px; margin-bottom:3px; }
-  .card-meta { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
-  .card-location { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); }
-  .card-source { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); padding:2px 6px; }
-  .card-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
-  .tag { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 7px; border:1px solid var(--border2); color:var(--text2); }
-  .tag.cert { border-color:var(--blue); color:var(--blue); }
-  .card-expand { display:none; grid-column:1/-1; padding-top:12px; margin-top:10px; border-top:1px solid var(--border); }
-  .supplier-card.expanded .card-expand { display:block; }
-  .card-expand p { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:7px; }
-  .card-expand .note { font-size:12px; color:var(--text3); font-style:italic; }
-  .card-url { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent); text-decoration:none; }
-  .card-url:hover { text-decoration:underline; }
-  .fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
-  .email-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
-  .btn-sm { padding:7px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--text2); transition:all 0.2s; }
-  .btn-sm:hover { border-color:var(--accent); color:var(--accent); }
-  .btn-sm.primary { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
-  .btn-reset { padding:6px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text3); transition:all 0.2s; }
-  .btn-reset:hover { color:var(--text2); }
-  .email-card { background:var(--surface); border:1px solid var(--border); margin-bottom:5px; }
-  .email-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; }
-  .email-card.open .email-header { border-bottom:1px solid var(--border); }
-  .email-to { font-family:'Syne',sans-serif; font-weight:600; font-size:14px; }
-  .email-subject { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); margin-top:3px; }
-  .email-chevron { color:var(--text3); font-size:12px; transition:transform 0.2s; }
-  .email-card.open .email-chevron { transform:rotate(180deg); }
-  .email-body { display:none; padding:14px 16px; }
-  .email-card.open .email-body { display:block; }
-  .email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
-  .email-actions { display:flex; gap:8px; margin-top:12px; }
-  .toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--accent); color:var(--accent); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 18px; opacity:0; transform:translateY(8px); transition:all 0.3s; pointer-events:none; z-index:999; }
-  .toast.show { opacity:1; transform:translateY(0); }
-  @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
-  .fade-in { animation:fadeIn 0.3s ease; }
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:#0a0b0d; --surface:#111318; --surface2:#181c24;
+  --border:#1e2330; --border2:#2a3040;
+  --accent:#e8a020; --accent2:#f0c060;
+  --text:#d8dde8; --text2:#9aa3b8; --text3:#6a7490;
+  --green:#2ecc71; --red:#e74c3c; --blue:#4a9eff;
+}
+body { background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
+body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
+.app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:28px 20px 80px; }
+
+header { display:flex; align-items:flex-end; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:36px; }
+.logo { display:flex; align-items:center; gap:10px; }
+.logo-mark { width:32px; height:32px; background:var(--accent); clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%); display:flex; align-items:center; justify-content:center; font-family:'Syne',sans-serif; font-weight:800; font-size:14px; color:var(--bg); }
+.logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.5px; }
+.logo-text span { color:var(--accent); }
+.header-meta { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:right; line-height:1.7; }
+
+.section-label { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:10px; }
+.stages { display:flex; margin-bottom:32px; }
+.stage { padding:5px 12px; border:1px solid var(--border); border-right:none; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface); }
+.stage:last-child { border-right:1px solid var(--border); }
+.stage.active { color:var(--accent); background:rgba(232,160,32,0.06); border-color:var(--accent); }
+
+.input-block { margin-bottom:20px; }
+.input-block label { display:block; font-size:13px; color:var(--text2); margin-bottom:8px; }
+textarea, input[type="text"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
+textarea:focus, input:focus { border-color:var(--accent); }
+textarea::placeholder, input::placeholder { color:var(--text3); }
+
+.pill-group { display:flex; gap:8px; flex-wrap:wrap; }
+.pill { padding:7px 15px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; user-select:none; }
+.pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
+
+.toggle-row { display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); cursor:pointer; font-size:12px; font-family:'IBM Plex Mono',monospace; user-select:none; transition:all 0.2s; margin-bottom:8px; }
+.toggle-row.on { border-color:var(--accent); background:rgba(232,160,32,0.07); color:var(--accent); }
+.toggle-check { width:11px; height:11px; border:1px solid currentColor; display:flex; align-items:center; justify-content:center; font-size:8px; flex-shrink:0; }
+
+.btn-launch { display:flex; align-items:center; gap:10px; background:var(--accent); color:var(--bg); border:none; padding:13px 26px; font-family:'Syne',sans-serif; font-weight:700; font-size:14px; cursor:pointer; clip-path:polygon(0 0,100% 0,100% 75%,94% 100%,0 100%); transition:background 0.2s; }
+.btn-launch:hover { background:var(--accent2); }
+.error-panel { background:rgba(231,76,60,0.08); border:1px solid var(--red); padding:11px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red); margin-top:14px; display:none; }
+.error-panel.active { display:block; }
+
+/* Loading */
+.loading-panel { background:var(--surface); border:1px solid var(--border2); padding:36px 28px; text-align:center; display:none; }
+.loading-panel.active { display:block; }
+.loader-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:20px; }
+.progress-track { height:4px; background:var(--border); margin:0 auto 8px; width:100%; max-width:400px; border-radius:2px; overflow:hidden; }
+.progress-fill { height:100%; background:var(--accent); width:0%; transition:width 0.6s ease; border-radius:2px; }
+.progress-label { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent); margin-bottom:20px; }
+.loader-steps { display:flex; flex-direction:column; gap:4px; align-items:flex-start; max-width:340px; margin:0 auto; }
+.loader-step { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); opacity:0; transition:opacity 0.4s,color 0.4s; }
+.loader-step.visible { opacity:1; color:var(--text2); }
+.loader-step.done { color:var(--green); opacity:1; }
+
+/* Results */
+.results-panel { display:none; }
+.results-panel.active { display:block; }
+.results-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px; }
+.results-title { font-family:'Syne',sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
+.results-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--accent); background:rgba(232,160,32,0.1); border:1px solid var(--accent); padding:3px 10px; white-space:nowrap; }
+.results-toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
+.fit-filters { display:flex; gap:0; }
+.fit-filter { padding:6px 12px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; border:1px solid var(--border2); border-right:none; background:var(--surface); color:var(--text3); transition:all 0.2s; user-select:none; }
+.fit-filter:last-child { border-right:1px solid var(--border2); }
+.fit-filter.active { background:rgba(232,160,32,0.1); color:var(--accent); border-color:var(--accent); }
+
+.tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:20px; }
+.tab { padding:9px 18px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; color:var(--text3); background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+/* Supplier cards */
+.supplier-card { background:var(--surface); border:1px solid var(--border); padding:13px 16px; display:grid; grid-template-columns:20px 26px 1fr auto; gap:10px; align-items:start; margin-bottom:2px; transition:border-color 0.2s; }
+.supplier-card:hover { border-color:var(--border2); }
+.supplier-card.expanded { border-color:var(--accent); }
+.supplier-card.hidden { display:none; }
+.card-checkbox { padding-top:3px; cursor:pointer; }
+.card-checkbox input { width:13px; height:13px; accent-color:var(--accent); cursor:pointer; }
+.card-num { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); padding-top:2px; }
+.card-body { cursor:pointer; }
+.card-name { font-family:'Syne',sans-serif; font-weight:600; font-size:15px; margin-bottom:3px; }
+.card-meta { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+.card-location { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); }
+.card-source { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); padding:2px 6px; }
+.card-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+.tag { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 7px; border:1px solid var(--border2); color:var(--text2); }
+.tag.cert { border-color:var(--blue); color:var(--blue); }
+.card-expand { display:none; grid-column:1/-1; padding-top:12px; margin-top:10px; border-top:1px solid var(--border); }
+.supplier-card.expanded .card-expand { display:block; }
+.card-expand p { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:7px; }
+.card-expand .note { font-size:12px; color:var(--text3); font-style:italic; }
+.card-url { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent); text-decoration:none; }
+.card-url:hover { text-decoration:underline; }
+.fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
+
+/* Buttons */
+.btn-sm { padding:7px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--text2); transition:all 0.2s; }
+.btn-sm:hover { border-color:var(--accent); color:var(--accent); }
+.btn-sm.primary { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
+.btn-sm.danger { border-color:var(--red); color:var(--red); background:rgba(231,76,60,0.08); }
+.btn-reset { padding:6px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text3); transition:all 0.2s; }
+.btn-reset:hover { color:var(--text2); }
+
+/* Add sources */
+.add-sources-bar { display:flex; gap:8px; margin-top:16px; align-items:center; flex-wrap:wrap; border-top:1px solid var(--border); padding-top:16px; }
+.add-sources-bar input { flex:1; min-width:200px; }
+
+/* Email tab */
+.email-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.email-card { background:var(--surface); border:1px solid var(--border); margin-bottom:5px; }
+.email-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; }
+.email-card.open .email-header { border-bottom:1px solid var(--border); }
+.email-to { font-family:'Syne',sans-serif; font-weight:600; font-size:14px; }
+.email-subject { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); margin-top:3px; }
+.email-chevron { color:var(--text3); font-size:12px; transition:transform 0.2s; }
+.email-card.open .email-chevron { transform:rotate(180deg); }
+.email-body { display:none; padding:14px 16px; }
+.email-card.open .email-body { display:block; }
+.email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
+.email-actions { display:flex; gap:8px; margin-top:12px; }
+
+/* Signature modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:500; display:none; align-items:center; justify-content:center; }
+.modal-overlay.active { display:flex; }
+.modal { background:var(--surface); border:1px solid var(--border2); padding:28px; width:90%; max-width:560px; }
+.modal-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:20px; }
+.wysiwyg-toolbar { display:flex; gap:4px; margin-bottom:8px; flex-wrap:wrap; }
+.wysiwyg-btn { padding:4px 10px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; border:1px solid var(--border2); background:var(--surface2); color:var(--text2); transition:all 0.2s; }
+.wysiwyg-btn:hover { color:var(--accent); border-color:var(--accent); }
+.wysiwyg-editor { min-height:120px; background:var(--surface2); border:1px solid var(--border2); color:var(--text); padding:12px 14px; font-size:13px; line-height:1.6; outline:none; }
+.wysiwyg-editor:focus { border-color:var(--accent); }
+.modal-actions { display:flex; gap:8px; margin-top:16px; justify-content:flex-end; }
+
+/* Toast */
+.toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--accent); color:var(--accent); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 18px; opacity:0; transform:translateY(8px); transition:all 0.3s; pointer-events:none; z-index:999; }
+.toast.show { opacity:1; transform:translateY(0); }
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+.fade-in { animation:fadeIn 0.3s ease; }
 </style>
 </head>
 <body>
@@ -110,9 +155,10 @@
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB / DANNY</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB</div>
   </header>
 
+  <!-- INPUT PANEL -->
   <div id="inputPanel">
     <div class="section-label">// NEW SOURCING REQUEST</div>
     <div class="stages">
@@ -121,10 +167,12 @@
       <div class="stage">03 DISCOVER</div>
       <div class="stage">04 CAMPAIGN</div>
     </div>
+
     <div class="input-block">
       <label>Describe what you're sourcing — part number, commodity, spec, or plain language</label>
       <textarea id="commodityInput" rows="4" placeholder="e.g. CNC machined aluminum brackets, 6061-T6, ~500 units/month, tolerances ±0.005&quot;. Or: 0.2mm stainless steel wire, high volume domestic."></textarea>
     </div>
+
     <div class="input-block">
       <label>Sourcing scope</label>
       <div class="pill-group" id="scopePills">
@@ -133,42 +181,69 @@
         <div class="pill" data-val="both">&#127760; Both</div>
       </div>
     </div>
+
     <div class="input-block">
-      <label>Certifications required <span style="color:var(--text3)">(optional)</span></label>
-      <div class="cert-grid" id="certGrid">
-        <div class="cert-item" data-val="ISO 9001"><div class="cert-check"></div>ISO 9001</div>
-        <div class="cert-item" data-val="AS9100"><div class="cert-check"></div>AS9100</div>
-        <div class="cert-item" data-val="IATF 16949"><div class="cert-check"></div>IATF 16949</div>
-        <div class="cert-item" data-val="ISO 13485"><div class="cert-check"></div>ISO 13485</div>
-        <div class="cert-item" data-val="NADCAP"><div class="cert-check"></div>NADCAP</div>
-        <div class="cert-item" data-val="ITAR"><div class="cert-check"></div>ITAR</div>
-        <div class="cert-item" data-val="RoHS"><div class="cert-check"></div>RoHS</div>
-        <div class="cert-item" data-val="UL Listed"><div class="cert-check"></div>UL Listed</div>
-      </div>
+      <label>Certifications required <span style="color:var(--text3)">(optional — comma separated, e.g. ISO 9001, AS9100, RoHS)</span></label>
+      <input type="text" id="certInput" placeholder="ISO 9001, AS9100, IATF 16949, RoHS..." />
     </div>
+
     <div class="input-block">
-      <div id="emailToggle" onclick="toggleEmailOption()" style="display:inline-flex;align-items:center;gap:7px;padding:9px 14px;border:1px solid var(--accent);background:rgba(232,160,32,0.07);color:var(--accent);cursor:pointer;font-size:12px;font-family:'IBM Plex Mono',monospace;user-select:none;">
-        <div id="emailCheck" style="width:11px;height:11px;border:1px solid var(--accent);display:flex;align-items:center;justify-content:center;font-size:8px;flex-shrink:0;color:var(--accent);">&#10003;</div>
+      <div id="emailToggle" class="toggle-row on" onclick="toggleOpt('email')">
+        <div class="toggle-check on">&#10003;</div>
         Include email campaign <span style="color:var(--text3);margin-left:6px;font-size:11px">(slower)</span>
       </div>
     </div>
-    <div class="input-block" id="senderBlock">
-      <label>Your name &amp; company <span style="color:var(--text3)">(used in outreach emails)</span></label>
-      <input type="text" id="senderInfo" placeholder="e.g. Danny Gambill, Sioux Chief Manufacturing" />
+
+    <div id="emailOptions">
+      <div class="input-block">
+        <label>Your name &amp; company <span style="color:var(--text3)">(used in outreach emails)</span></label>
+        <input type="text" id="senderInfo" placeholder="e.g. Danny Gambill, Sioux Chief Manufacturing" />
+      </div>
+      <div class="input-block">
+        <label>Your email address <span style="color:var(--text3)">(for mailto campaign)</span></label>
+        <input type="text" id="senderEmail" placeholder="e.g. dgambill@siouxchief.com" />
+      </div>
+
+      <div class="input-block">
+        <div id="attachToggle" class="toggle-row" onclick="toggleOpt('attach')">
+          <div class="toggle-check">&#10003;</div>
+          Including attachments with emails
+        </div>
+        <div id="attachOptions" style="display:none;margin-top:10px;">
+          <label style="margin-bottom:8px;display:block;font-size:13px;color:var(--text2);">Attachment type</label>
+          <div class="pill-group" id="attachPills">
+            <div class="pill selected" data-val="spec sheet">Spec Sheet</div>
+            <div class="pill" data-val="RFQ">RFQ</div>
+            <div class="pill" data-val="engineering drawing">Engineering Drawing</div>
+            <div class="pill" data-val="technical datasheet">Technical Datasheet</div>
+            <div class="pill" data-val="purchase order">Purchase Order</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="input-block">
+        <div id="sigToggle" class="toggle-row" onclick="openSigEditor()">
+          <div class="toggle-check" id="sigCheck"></div>
+          Add email signature <span style="color:var(--text3);margin-left:6px;font-size:11px">(click to edit)</span>
+        </div>
+      </div>
     </div>
+
     <button class="btn-launch" onclick="runSearch()">
       <span>FIND SUPPLIERS</span><span style="font-size:17px">&#8594;</span>
     </button>
     <div class="error-panel" id="errorPanel"></div>
   </div>
 
+  <!-- LOADING PANEL -->
   <div class="loading-panel" id="loadingPanel">
-    <div style="font-family:'Syne',sans-serif;font-weight:700;font-size:16px;margin-bottom:8px;">Searching supplier networks...</div>
-    <div class="loader-bar"></div>
-    <div class="loader-status" id="loaderStatus">Initializing...</div>
-    <div id="loaderSteps" style="margin-top:14px;"></div>
+    <div class="loader-title">Searching supplier networks...</div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-label" id="progressLabel">0%</div>
+    <div class="loader-steps" id="loaderSteps"></div>
   </div>
 
+  <!-- RESULTS PANEL -->
   <div class="results-panel" id="resultsPanel">
     <div class="results-header">
       <div>
@@ -180,18 +255,36 @@
         <button class="btn-reset" onclick="reset()">&#8634; New Search</button>
       </div>
     </div>
-    <div class="results-actions">
-      <button class="btn-sm primary" onclick="printResults()">&#128438; Print</button>
-      <button class="btn-sm primary" onclick="downloadXLSX()">&#8659; Download XLSX</button>
+
+    <div class="results-toolbar">
+      <div class="fit-filters">
+        <div class="fit-filter active" data-fit="all" onclick="setFitFilter('all',this)">ALL</div>
+        <div class="fit-filter" data-fit="high" onclick="setFitFilter('high',this)">HIGH</div>
+        <div class="fit-filter" data-fit="highmed" onclick="setFitFilter('highmed',this)">HIGH + MED</div>
+      </div>
+      <button class="btn-sm" onclick="selectAll(true)">&#9745; Select All</button>
+      <button class="btn-sm" onclick="selectAll(false)">&#9744; Deselect All</button>
+      <button class="btn-sm primary" onclick="printResults()">&#128438; Print Selected</button>
+      <button class="btn-sm primary" onclick="downloadXLSX()">&#8659; Export Selected</button>
     </div>
+
     <div class="tabs">
       <button class="tab active" onclick="switchTab('suppliers',this)">SUPPLIER LIST</button>
       <button class="tab" id="emailTab" onclick="switchTab('emails',this)" style="display:none;">EMAIL CAMPAIGN</button>
     </div>
-    <div id="suppliersTab"><div id="supplierGrid"></div></div>
+
+    <div id="suppliersTab">
+      <div id="supplierGrid"></div>
+      <div class="add-sources-bar">
+        <input type="text" id="additionalCommodity" placeholder="Search additional sources (same commodity, or refine description)..." />
+        <button class="btn-sm primary" onclick="searchAdditional()">&#8853; Search More Sources</button>
+      </div>
+    </div>
+
     <div id="emailsTab" style="display:none;">
       <div class="email-controls">
-        <button class="btn-sm primary" onclick="copyAll()">&#8853; Copy All Emails</button>
+        <button class="btn-sm primary" onclick="launchEmailCampaign()">&#9993; Launch Email Campaign (BCC)</button>
+        <button class="btn-sm" onclick="copyAll()">&#8853; Copy All Emails</button>
         <button class="btn-sm" onclick="document.querySelectorAll('.email-card').forEach(c=>c.classList.add('open'))">&#8595; Expand All</button>
         <button class="btn-sm" onclick="document.querySelectorAll('.email-card').forEach(c=>c.classList.remove('open'))">&#8593; Collapse All</button>
       </div>
@@ -200,57 +293,99 @@
   </div>
 </div>
 
+<!-- SIGNATURE MODAL -->
+<div class="modal-overlay" id="sigModal">
+  <div class="modal">
+    <div class="modal-title">Email Signature Editor</div>
+    <div class="wysiwyg-toolbar">
+      <button class="wysiwyg-btn" onclick="sigCmd('bold')"><b>B</b></button>
+      <button class="wysiwyg-btn" onclick="sigCmd('italic')"><i>I</i></button>
+      <button class="wysiwyg-btn" onclick="sigCmd('underline')"><u>U</u></button>
+      <button class="wysiwyg-btn" onclick="sigCmd('insertUnorderedList')">&#8226; List</button>
+      <button class="wysiwyg-btn" onclick="sigLink()">&#128279; Link</button>
+      <button class="wysiwyg-btn" onclick="sigCmd('removeFormat')">&#10005; Clear</button>
+    </div>
+    <div class="wysiwyg-editor" id="sigEditor" contenteditable="true" placeholder="Type your signature here..."></div>
+    <div class="modal-actions">
+      <button class="btn-sm" onclick="closeSigEditor()">Cancel</button>
+      <button class="btn-sm primary" onclick="saveSig()">Save Signature</button>
+    </div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let scope='domestic', certs=[], suppliers=[], emails=[], includeEmails=true;
+let scope='domestic', suppliers=[], emails=[], includeEmails=true, includeAttach=false, attachType='spec sheet', sigHTML='', sigSaved=false, fitFilter='all';
 
 const STEPS={
-  domestic:["Querying ThomasNet directory","Scanning MFG.com listings","Checking IndustryNet","Searching Maker's Row","Cross-referencing trade associations","Scoring & ranking supplier fit"],
-  foreign:["Querying ImportYeti trade records","Scanning Kompass global database","Searching Made-in-China","Checking Global Sources & HKTDC","Cross-referencing trade associations","Scoring & ranking supplier fit"],
-  both:["Querying ImportYeti trade records","Scanning ThomasNet & MFG.com","Searching Kompass & Europages","Checking Made-in-China & Global Sources","Cross-referencing trade associations","Scoring & ranking supplier fit"]
+  domestic:["Querying ThomasNet directory","Scanning MFG.com listings","Checking IndustryNet & Maker's Row","Cross-referencing trade associations","Scoring & ranking supplier fit"],
+  foreign:["Querying ImportYeti trade records","Scanning Kompass global database","Searching Made-in-China & Global Sources","Checking HKTDC & Europages","Scoring & ranking supplier fit"],
+  both:["Querying ImportYeti trade records","Scanning ThomasNet & MFG.com","Searching Kompass & Europages","Checking Made-in-China & Global Sources","Scoring & ranking supplier fit"]
 };
 
-function toggleEmailOption(){
-  includeEmails=!includeEmails;
-  const toggle=document.getElementById('emailToggle');
-  const check=document.getElementById('emailCheck');
-  const sb=document.getElementById('senderBlock');
-  if(includeEmails){
-    toggle.style.borderColor='var(--accent)';toggle.style.background='rgba(232,160,32,0.07)';toggle.style.color='var(--accent)';
-    check.style.borderColor='var(--accent)';check.style.color='var(--accent)';check.innerHTML='&#10003;';
-    sb.style.display='block';
-  } else {
-    toggle.style.borderColor='var(--border2)';toggle.style.background='var(--surface)';toggle.style.color='var(--text2)';
-    check.style.borderColor='var(--text3)';check.style.color='transparent';check.innerHTML='';
-    sb.style.display='none';
+// Toggle options
+function toggleOpt(type){
+  if(type==='email'){
+    includeEmails=!includeEmails;
+    const el=document.getElementById('emailToggle');
+    const opts=document.getElementById('emailOptions');
+    el.classList.toggle('on',includeEmails);
+    el.querySelector('.toggle-check').innerHTML=includeEmails?'&#10003;':'';
+    opts.style.display=includeEmails?'block':'none';
+  } else if(type==='attach'){
+    includeAttach=!includeAttach;
+    const el=document.getElementById('attachToggle');
+    el.classList.toggle('on',includeAttach);
+    el.querySelector('.toggle-check').innerHTML=includeAttach?'&#10003;':'';
+    document.getElementById('attachOptions').style.display=includeAttach?'block':'none';
   }
 }
 
+// Scope pills
 document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
   document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
   p.classList.add('selected'); scope=p.dataset.val;
 }));
 
-document.querySelectorAll('#certGrid .cert-item').forEach(c=>c.addEventListener('click',()=>{
-  c.classList.toggle('selected');
-  const v=c.dataset.val;
-  certs=certs.includes(v)?certs.filter(x=>x!==v):[...certs,v];
-  c.querySelector('.cert-check').innerHTML=c.classList.contains('selected')?'&#10003;':'';
+// Attach type pills
+document.querySelectorAll('#attachPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#attachPills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected'); attachType=p.dataset.val;
 }));
 
+// Signature editor
+function openSigEditor(){ document.getElementById('sigModal').classList.add('active'); }
+function closeSigEditor(){ document.getElementById('sigModal').classList.remove('active'); }
+function saveSig(){
+  sigHTML=document.getElementById('sigEditor').innerHTML.trim();
+  sigSaved=sigHTML.length>0;
+  document.getElementById('sigCheck').innerHTML=sigSaved?'&#10003;':'';
+  document.getElementById('sigToggle').classList.toggle('on',sigSaved);
+  closeSigEditor();
+  showToast('Signature saved!');
+}
+function sigCmd(cmd){ document.getElementById('sigEditor').focus(); document.execCommand(cmd,false,null); }
+function sigLink(){
+  const url=prompt('Enter URL:');
+  if(url){ document.getElementById('sigEditor').focus(); document.execCommand('createLink',false,url); }
+}
+
+// Prompts
 function buildSupplierPrompt(commodity,scope,certs){
   const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
-  const certText=certs.length?'Required certifications: '+certs.join(', ')+'.':'No specific certifications required.';
-  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n\nReturn a JSON array of 15-20 supplier objects each with: id (number), name, location, website (real URL), source (e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), url.\n\nPrioritize high-fit first. Return ONLY a valid JSON array. No markdown. No preamble.';
+  const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
+  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n\nReturn a JSON array of 15-20 supplier objects each with: id (number), name, location, website (real URL), source (e.g. ThomasNet, ImportYeti, Kompass, Made-in-China, Global Sources, MFG.com, Europages, HKTDC, IndustryNet, Maker\'s Row), specialty (1 sentence), tags (2-4 strings), certs (array), fit ("high"/"medium"/"low"), fitReason (1 sentence), url.\n\nPrioritize high-fit first. Return ONLY a valid JSON array. No markdown. No preamble.';
 }
 
-function buildEmailPrompt(commodity,suppliers,sender){
+function buildEmailPrompt(commodity,supList,sender,attach,attachType){
   const senderText=sender||'a sourcing analyst';
-  const list=suppliers.map(s=>'id:'+s.id+', company:'+s.name+', location:'+s.location+', specialty:'+s.specialty).join('\n');
-  return 'You are a procurement professional writing supplier outreach emails.\n\nCommodity: "'+commodity+'"\nSigned by: '+senderText+'\n\nWrite one email per supplier. Return a JSON array with: supplierId, to, subject, body (4-5 paragraphs, references supplier specialty, requests quote, signed by '+senderText+').\n\nSuppliers:\n'+list+'\n\nReturn ONLY a valid JSON array. No markdown. No preamble.';
+  const attachNote=attach?'\n\nIMPORTANT: Each email body must include a natural reference to an attached '+attachType+'. Phrase it professionally, e.g. "I have attached our '+attachType+' for your reference" or "Please find the attached '+attachType+'."':'';
+  const list=supList.map(s=>'id:'+s.id+', company:'+s.name+', location:'+s.location+', specialty:'+s.specialty).join('\n');
+  return 'You are a procurement professional writing supplier outreach emails.\n\nCommodity: "'+commodity+'"\nSigned by: '+senderText+attachNote+'\n\nWrite one email per supplier. Return a JSON array with: supplierId, to, subject, body (4-5 paragraphs, references supplier specialty specifically, describes what is being sourced, requests quote or capability statement'+( attach?', mentions attached '+attachType:'')+', signed by '+senderText+').\n\nSuppliers:\n'+list+'\n\nReturn ONLY a valid JSON array. No markdown. No preamble.';
 }
 
+// API call
 async function callAPI(payload){
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
   const data=await res.json();
@@ -259,33 +394,53 @@ async function callAPI(payload){
   return JSON.parse(raw);
 }
 
+// Progress bar
+function setProgress(pct,label){
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('progressLabel').textContent=label;
+}
+
+// Main search
 async function runSearch(){
   const commodity=document.getElementById('commodityInput').value.trim();
   const sender=document.getElementById('senderInfo').value.trim();
+  const certs=document.getElementById('certInput').value.trim();
   if(!commodity){showError('Please describe what you are sourcing.');return;}
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
   document.getElementById('loadingPanel').classList.add('active');
+  setProgress(0,'Starting...');
 
   const baseSteps=[...STEPS[scope]];
   if(includeEmails) baseSteps.push('Drafting email campaign');
   const stepsEl=document.getElementById('loaderSteps');
   stepsEl.innerHTML=baseSteps.map(s=>'<div class="loader-step">&#8594; '+s+'</div>').join('');
   const stepEls=stepsEl.querySelectorAll('.loader-step');
+  const supplierPct=includeEmails?60:100;
   let i=0;
+  const supplierStepCount=baseSteps.length-(includeEmails?1:0);
+
   const interval=setInterval(()=>{
-    if(i<stepEls.length){if(i>0)stepEls[i-1].classList.add('done');stepEls[i].classList.add('visible');document.getElementById('loaderStatus').textContent=baseSteps[i];i++;}
-    else clearInterval(interval);
+    if(i<stepEls.length){
+      if(i>0)stepEls[i-1].classList.add('done');
+      stepEls[i].classList.add('visible');
+      const pct=i<supplierStepCount?Math.round((i+1)/supplierStepCount*supplierPct):Math.round(supplierPct+((i-supplierStepCount+1)/1)*(100-supplierPct));
+      setProgress(Math.min(pct,95),baseSteps[i]);
+      i++;
+    } else clearInterval(interval);
   },950);
 
   try{
-    suppliers=await callAPI({model:'claude-sonnet-4-20250514',max_tokens:4000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildSupplierPrompt(commodity,scope,certs)}]});
+    suppliers=await callAPI({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildSupplierPrompt(commodity,scope,certs)}]});
     if(includeEmails){
-      emails=await callAPI({model:'claude-sonnet-4-20250514',max_tokens:6000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildEmailPrompt(commodity,suppliers,sender)}]});
+      emails=await callAPI({model:'claude-haiku-4-5-20251001',max_tokens:6000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildEmailPrompt(commodity,suppliers,sender,includeAttach,attachType)}]});
     } else { emails=[]; }
     clearInterval(interval);
-    document.getElementById('loadingPanel').classList.remove('active');
-    renderResults(commodity);
+    setProgress(100,'Complete!');
+    setTimeout(()=>{
+      document.getElementById('loadingPanel').classList.remove('active');
+      renderResults(commodity);
+    },400);
   }catch(err){
     clearInterval(interval);
     document.getElementById('loadingPanel').classList.remove('active');
@@ -294,11 +449,74 @@ async function runSearch(){
   }
 }
 
+// Search additional sources
+async function searchAdditional(){
+  const addCommodity=document.getElementById('additionalCommodity').value.trim();
+  const certs=document.getElementById('certInput').value.trim();
+  if(!addCommodity){showToast('Enter a description to search');return;}
+  const btn=document.querySelector('.add-sources-bar .btn-sm');
+  btn.textContent='Searching...';btn.disabled=true;
+  try{
+    const newSuppliers=await callAPI({model:'claude-haiku-4-5-20251001',max_tokens:4000,system:'Return only a valid JSON array. No markdown. No preamble.',messages:[{role:'user',content:buildSupplierPrompt(addCommodity,scope,certs)}]});
+    // Deduplicate by name and website
+    const existingKeys=new Set(suppliers.map(s=>s.name.toLowerCase().trim()));
+    const existingUrls=new Set(suppliers.map(s=>(s.website||'').toLowerCase().trim()));
+    const fresh=newSuppliers.filter(s=>!existingKeys.has(s.name.toLowerCase().trim())&&!existingUrls.has((s.website||'').toLowerCase().trim()));
+    // Renumber
+    const startId=suppliers.length+1;
+    fresh.forEach((s,i)=>s.id=startId+i);
+    suppliers=[...suppliers,...fresh];
+    document.getElementById('additionalCommodity').value='';
+    document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
+    renderSupplierCards();
+    showToast(fresh.length+' new suppliers added!');
+  }catch(err){showError('Additional search failed: '+err.message);}
+  btn.textContent='&#8853; Search More Sources';btn.disabled=false;
+}
+
+// Fit filter
+function setFitFilter(val,el){
+  fitFilter=val;
+  document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
+  el.classList.add('active');
+  applyFitFilter();
+}
+
+function applyFitFilter(){
+  document.querySelectorAll('.supplier-card').forEach(card=>{
+    const fit=card.dataset.fit;
+    let show=true;
+    if(fitFilter==='high') show=fit==='high';
+    else if(fitFilter==='highmed') show=fit==='high'||fit==='medium';
+    card.classList.toggle('hidden',!show);
+  });
+}
+
+// Select all/none
+function selectAll(val){
+  document.querySelectorAll('.supplier-card:not(.hidden) .card-checkbox input').forEach(cb=>cb.checked=val);
+}
+
+function getSelectedSuppliers(){
+  const selected=[];
+  document.querySelectorAll('.supplier-card').forEach(card=>{
+    const cb=card.querySelector('.card-checkbox input');
+    if(cb&&cb.checked) selected.push(suppliers.find(s=>s.id===parseInt(card.dataset.id)));
+  });
+  return selected.filter(Boolean);
+}
+
+// Render
 function renderResults(commodity){
   document.getElementById('resultsPanel').classList.add('active');
   document.getElementById('resultsTitle').textContent=commodity.length>65?commodity.substring(0,65)+'...':commodity;
   document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
   document.getElementById('emailTab').style.display=emails.length?'block':'none';
+  renderSupplierCards();
+  renderEmailCards();
+}
+
+function renderSupplierCards(){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
   const grid=document.getElementById('supplierGrid');
@@ -306,12 +524,18 @@ function renderResults(commodity){
   suppliers.forEach(s=>{
     const d=document.createElement('div');
     d.className='supplier-card fade-in';
+    d.dataset.id=s.id;
+    d.dataset.fit=s.fit;
     const fc=fitColor(s.fit);
     const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
-    d.innerHTML='<div class="card-num">'+String(s.id).padStart(2,'0')+'</div><div><div class="card-name">'+s.name+'</div><div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div><div class="card-tags">'+tags+'</div><div class="card-expand"><p>'+s.specialty+'</p><p class="note">'+s.fitReason+'</p><a class="card-url" href="'+s.website+'" target="_blank">&#8599; '+s.website+'</a></div></div><div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
-    d.addEventListener('click',()=>d.classList.toggle('expanded'));
+    d.innerHTML='<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div><div class="card-num">'+String(s.id).padStart(2,'0')+'</div><div class="card-body"><div class="card-name">'+s.name+'</div><div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div><div class="card-tags">'+tags+'</div><div class="card-expand"><p>'+s.specialty+'</p><p class="note">'+s.fitReason+'</p><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a></div></div><div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
+    d.querySelector('.card-body').addEventListener('click',()=>d.classList.toggle('expanded'));
     grid.appendChild(d);
   });
+  applyFitFilter();
+}
+
+function renderEmailCards(){
   const eg=document.getElementById('emailGrid');
   eg.innerHTML='';
   emails.forEach(e=>{
@@ -333,19 +557,40 @@ function switchTab(tab,el){
   document.getElementById('emailsTab').style.display=tab==='emails'?'block':'none';
 }
 
-function copyAll(){
-  const all=emails.map((e,i)=>'--- '+(i+1)+'. TO: '+e.to+' ---\nSUBJECT: '+e.subject+'\n\n'+e.body).join('\n\n'+'='.repeat(50)+'\n\n');
-  copyText(all); showToast('All emails copied!');
+// Email campaign via mailto BCC
+function launchEmailCampaign(){
+  const senderEmail=document.getElementById('senderEmail').value.trim();
+  const selected=getSelectedSuppliers();
+  const selectedEmails=emails.filter(e=>selected.find(s=>s.id===e.supplierId));
+  if(!selectedEmails.length){showToast('No selected suppliers with emails');return;}
+  const bcc=selectedEmails.map(e=>{const s=selected.find(x=>x.id===e.supplierId);return s?s.name+' <'+s.website.replace(/https?:\/\//,'').split('/')[0]+'>':''}).filter(Boolean).join(',');
+  const firstEmail=selectedEmails[0];
+  let body=firstEmail.body;
+  if(sigSaved){
+    const sigText=document.getElementById('sigEditor').innerText;
+    body+='\n\n'+sigText;
+  }
+  const mailto='mailto:'+encodeURIComponent(senderEmail)+'?bcc='+encodeURIComponent(selectedEmails.map(()=>'').join(','))+'&subject='+encodeURIComponent(firstEmail.subject)+'&body='+encodeURIComponent(body);
+  window.location.href=mailto;
+  showToast('Opening email client...');
 }
 
-function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('Copied!'));}
+function copyAll(){
+  const sel=getSelectedSuppliers();
+  const selEmails=emails.filter(e=>sel.find(s=>s.id===e.supplierId));
+  const src=selEmails.length?selEmails:emails;
+  const all=src.map((e,i)=>'--- '+(i+1)+'. TO: '+e.to+' ---\nSUBJECT: '+e.subject+'\n\n'+e.body).join('\n\n'+'='.repeat(50)+'\n\n');
+  copyText(all); showToast('Emails copied!');
+}
 
 function printResults(){
+  const sel=getSelectedSuppliers();
+  const src=sel.length?sel:suppliers;
   const commodity=document.getElementById('resultsTitle').textContent;
   let html='<html><head><title>SupplierScout - '+commodity+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;}h1{font-size:18px;margin-bottom:4px;}.meta{font-size:11px;color:#666;margin-bottom:20px;}table{width:100%;border-collapse:collapse;}th{background:#111;color:#fff;padding:8px 10px;text-align:left;font-size:11px;}td{padding:7px 10px;border-bottom:1px solid #e0e0e0;font-size:11px;vertical-align:top;}.hi{color:#1a9e50;font-weight:bold;}.me{color:#b07000;font-weight:bold;}.lo{color:#888;}@media print{body{padding:0;}}</style></head><body>';
-  html+='<h1>SupplierScout Results</h1><div class="meta">Commodity: '+commodity+' &nbsp;|&nbsp; '+suppliers.length+' suppliers &nbsp;|&nbsp; '+new Date().toLocaleDateString()+'</div>';
+  html+='<h1>SupplierScout Results</h1><div class="meta">Commodity: '+commodity+' &nbsp;|&nbsp; '+src.length+' suppliers &nbsp;|&nbsp; '+new Date().toLocaleDateString()+'</div>';
   html+='<table><thead><tr><th>#</th><th>Company</th><th>Location</th><th>Source</th><th>Specialty</th><th>Fit</th><th>Website</th></tr></thead><tbody>';
-  suppliers.forEach(s=>{
+  src.forEach(s=>{
     const cls=s.fit==='high'?'hi':s.fit==='medium'?'me':'lo';
     html+='<tr><td>'+s.id+'</td><td><strong>'+s.name+'</strong></td><td>'+s.location+'</td><td>'+s.source+'</td><td>'+s.specialty+'</td><td class="'+cls+'">'+s.fit.toUpperCase()+'</td><td>'+s.website+'</td></tr>';
   });
@@ -356,16 +601,19 @@ function printResults(){
 }
 
 function downloadXLSX(){
+  const sel=getSelectedSuppliers();
+  const src=sel.length?sel:suppliers;
   const commodity=document.getElementById('resultsTitle').textContent;
   const wsData=[['#','Company','Location','Source','Specialty','Tags','Certifications','Fit','Fit Reason','Website']];
-  suppliers.forEach(s=>wsData.push([s.id,s.name,s.location,s.source,s.specialty,(s.tags||[]).join(', '),(s.certs||[]).join(', '),s.fit.toUpperCase(),s.fitReason,s.website]));
+  src.forEach(s=>wsData.push([s.id,s.name,s.location,s.source,s.specialty,(s.tags||[]).join(', '),(s.certs||[]).join(', '),s.fit.toUpperCase(),s.fitReason,s.website]));
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(wsData);
   ws['!cols']=[{wch:4},{wch:28},{wch:20},{wch:14},{wch:45},{wch:30},{wch:20},{wch:8},{wch:40},{wch:35}];
   XLSX.utils.book_append_sheet(wb,ws,'Suppliers');
   if(emails.length){
+    const selEmails=sel.length?emails.filter(e=>sel.find(s=>s.id===e.supplierId)):emails;
     const ed=[['Company','Subject','Email Body']];
-    emails.forEach(e=>ed.push([e.to,e.subject,e.body]));
+    selEmails.forEach(e=>ed.push([e.to,e.subject,e.body]));
     const ws2=XLSX.utils.aoa_to_sheet(ed);
     ws2['!cols']=[{wch:28},{wch:50},{wch:100}];
     XLSX.utils.book_append_sheet(wb,ws2,'Emails');
@@ -373,6 +621,8 @@ function downloadXLSX(){
   XLSX.writeFile(wb,'SupplierScout_'+commodity.substring(0,30).replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
   showToast('Downloaded!');
 }
+
+function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('Copied!'));}
 
 function showToast(msg){
   const t=document.getElementById('toast');t.textContent=msg+' \u2713';t.classList.add('show');
@@ -386,11 +636,15 @@ function reset(){
   document.getElementById('inputPanel').style.display='block';
   document.getElementById('commodityInput').value='';
   document.getElementById('senderInfo').value='';
-  scope='domestic'; certs=[];
+  document.getElementById('senderEmail').value='';
+  document.getElementById('certInput').value='';
+  document.getElementById('additionalCommodity').value='';
+  scope='domestic'; fitFilter='all';
   document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
-  document.querySelectorAll('#certGrid .cert-item').forEach(c=>{c.classList.remove('selected');c.querySelector('.cert-check').innerHTML='';});
   suppliers=[];emails=[];
+  document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
+  document.querySelector('.fit-filter[data-fit="all"]').classList.add('active');
   switchTab('suppliers',document.querySelector('.tab'));
 }
 </script>
