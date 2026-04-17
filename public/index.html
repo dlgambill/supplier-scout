@@ -647,7 +647,8 @@ function renderSupplierCards(){
 
 
     // Website — only show if present; add unverified indicator
-    const websiteHtml=s.website?'<div style="margin-top:6px;"><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>':'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
+    const websiteUrl=s.website?(s.website.startsWith('http')?s.website:'https://'+s.website):'';
+    const websiteHtml=websiteUrl?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>':'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
     const sourceUrl=getSourceSearchUrl(s.source);
     const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a></div>';
     const verifyUrl='https://www.google.com/search?q='+encodeURIComponent('"'+s.name+'" '+currentCommodity+' manufacturer');
@@ -660,13 +661,13 @@ function renderSupplierCards(){
         +'<div class="card-name">'+s.name+'</div>'
         +'<div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div>'
         +'<div class="card-tags">'+tags+'</div>'
+        +verifyBtn
         +'<div class="card-expand">'
           +'<p>'+s.specialty+'</p>'
           +'<p class="note">'+s.fitReason+'</p>'
           +contactHtml
           +websiteHtml
           +sourceHtml
-          +verifyBtn
         +'</div>'
       +'</div>'
       +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
