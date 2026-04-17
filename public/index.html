@@ -125,6 +125,8 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .btn-sm.refine { border-color:var(--blue); color:var(--blue); background:rgba(74,158,255,0.08); }
 .btn-sm.refine:hover { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
 .btn-reset { padding:6px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text3); transition:all 0.2s; }
+.btn-verify { display:inline-flex; align-items:center; gap:5px; font-family:'IBM Plex Mono',monospace; font-size:11px; padding:5px 11px; border:1px solid var(--border2); color:var(--text2); text-decoration:none; background:var(--surface2); transition:all 0.2s; }
+.btn-verify:hover { border-color:var(--blue); color:var(--blue); }
 .btn-reset:hover { color:var(--text2); }
 
 .email-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
@@ -389,8 +391,8 @@ function buildSupplierPrompt(commodity,scope,certs,countries,hts){
   const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
   const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
   const countryText=(countries&&(scope==='foreign'||scope==='both'))?'Preferred countries: '+countries+'.':'';
-  const htsText=hts?'HTS Code: '+hts+' — use this to refine commodity classification and identify suppliers that commonly trade this code.':'';
-  return 'You are an expert sourcing analyst with deep knowledge of global manufacturing.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of up to 10 supplier objects. Only include companies you have HIGH CONFIDENCE actually exist as manufacturers or distributors of this commodity. If you are uncertain whether a specific company makes this product, omit them. It is better to return fewer confident entries than to invent or guess companies.\n\nEach object must have:\n- id (number)\n- name (real company name you are confident exists)\n- location (city, state or city, country)\n- website (the company real domain only if you are highly confident it is correct, otherwise use empty string)\n- source (directory type where this supplier is commonly listed: one of ThomasNet / Kompass / Global Sources / ImportYeti / MFG.com / Europages / HKTDC / IndustryNet / Trade Association / Direct)\n- specialty (1 sentence describing their relevant capabilities)\n- tags (2-4 short capability strings)\n- certs (array of certifications if known, else empty array)\n- fit (high/medium/low based on match to this commodity)\n- fitReason (1 sentence explaining the fit score)\n- contactEmail (always empty string — do not guess or fabricate)\n- contactName (always empty string — do not guess or fabricate)\n\nDo NOT invent company names, websites, or email addresses. Do not bias results toward any single country or sourcing directory. Prioritize established manufacturers and well-known industry players. Return ONLY a valid JSON array. No markdown. No preamble.';
+  const htsText=hts?'HTS Code: '+hts+' — use this to sharpen commodity classification.':'';
+  return 'You are an expert sourcing analyst with deep knowledge of global manufacturing.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of up to 10 supplier objects. Only include companies you are highly confident actually manufacture or distribute this commodity. Omit any company you are uncertain about — fewer accurate results beat more hallucinated ones.\n\nFor each supplier object include:\n- id (number)\n- name (real company name)\n- location (city, state or city, country)\n- website (company domain if you know it, else empty string)\n- source (one of: ThomasNet / Kompass / MFG.com / Europages / IndustryNet / Makers Row / Trade Association / Direct)\n- specialty (1 sentence on their relevant capabilities)\n- tags (2-4 short capability strings)\n- certs (known certifications, else empty array)\n- fit ("high"/"medium"/"low")\n- fitReason (1 sentence)\n- contactEmail ("")\n- contactName ("")\n\nDo not fabricate names, websites, or emails. Do not bias toward any country unless specified. Prioritize established, well-known manufacturers. Return ONLY a valid JSON array. No markdown. No preamble.';
 }
 
 function buildEmailPrompt(commodity,attach,attachList){
@@ -616,18 +618,16 @@ function getSourceSearchUrl(source){
   const query=buildSearchQuery();
   const q=encodeURIComponent(query);
   const s=(source||'').toLowerCase();
-  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+q+'/F1/1.html';
   if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
-  if(s.includes('alibaba'))       return 'https://www.alibaba.com/trade/search?SearchText='+q;
-  if(s.includes('global sources'))return 'https://www.globalsources.com/si/AS/Search/g/'+q+'.html';
   if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
   if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
   if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
   if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
-  if(s.includes('hktdc'))         return 'https://www.hktdc.com/sourcing/hk_trade_name_directory.htm?lang=en&companyName='+q;
-  if(s.includes('europages'))     return 'https://www.europages.co.uk/en/pg/'+q+'-0.html';
+  if(s.includes('europages'))     return 'https://www.europages.co.uk/en/search?q='+q;
   if(s.includes("maker")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
-  return 'https://www.google.com/search?q='+q+'+supplier';
+  if(s.includes('trade association')||s.includes('direct')) return 'https://www.google.com/search?q='+encodeURIComponent(query+' manufacturer');
+  // For any other source (Global Sources, HKTDC, Alibaba, etc.) fall back to Google search for the company name
+  return 'https://www.google.com/search?q='+encodeURIComponent(query)+'+manufacturer+supplier';
 }
 function renderSupplierCards(){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
@@ -649,7 +649,9 @@ function renderSupplierCards(){
     // Website — only show if present; add unverified indicator
     const websiteHtml=s.website?'<div style="margin-top:6px;"><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>':'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
     const sourceUrl=getSourceSearchUrl(s.source);
-    const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a><span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:6px;">(verify this supplier exists)</span></div>';
+    const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a></div>';
+    const verifyUrl='https://www.google.com/search?q='+encodeURIComponent('"'+s.name+'" '+currentCommodity+' manufacturer');
+    const verifyBtn='<div style="margin-top:8px;"><a href="'+verifyUrl+'" target="_blank" onclick="event.stopPropagation()" class="btn-verify">&#128269; Verify on Google</a></div>';
 
     d.innerHTML=
       '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
@@ -664,6 +666,7 @@ function renderSupplierCards(){
           +contactHtml
           +websiteHtml
           +sourceHtml
+          +verifyBtn
         +'</div>'
       +'</div>'
       +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
