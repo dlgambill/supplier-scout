@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SupplierScout — AI Sourcing Intelligence</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpolygon points='0,0 32,0 32,22 22,32 0,32' fill='%23e8a020'/%3E%3Ctext x='7' y='23' font-family='Arial' font-weight='900' font-size='20' fill='%230a0b0d'%3ES%3C/text%3E%3C/svg%3E">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400&display=swap" rel="stylesheet">
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+:root {
+  --bg:#0a0b0d; --surface:#111318; --surface2:#181c24;
+  --border:#1e2330; --border2:#2a3040;
+  --accent:#e8a020; --accent2:#f0c060;
+  --text:#d8dde8; --text2:#9aa3b8; --text3:#6a7490;
+  --green:#2ecc71; --red:#e74c3c; --blue:#4a9eff;
+}
+body { background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
+body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
+.app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:28px 20px 80px; }
+
+header { display:flex; align-items:flex-end; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:36px; }
+.logo { display:flex; align-items:center; gap:10px; }
+.logo-mark { width:32px; height:32px; background:var(--accent); clip-path:polygon(0 0,100% 0,100% 70%,70% 100%,0 100%); display:flex; align-items:center; justify-content:center; font-family:'Syne',sans-serif; font-weight:800; font-size:14px; color:var(--bg); }
+.logo-text { font-family:'Syne',sans-serif; font-weight:800; font-size:18px; letter-spacing:-0.5px; }
+.logo-text span { color:var(--accent); }
+.header-meta { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); text-align:right; line-height:1.7; }
+
+.section-label { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:2px; text-transform:uppercase; color:var(--accent); margin-bottom:10px; }
+.stages { display:flex; margin-bottom:32px; }
+.stage { padding:5px 12px; border:1px solid var(--border); border-right:none; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface); }
+.stage:last-child { border-right:1px solid var(--border); }
+.stage.active { color:var(--accent); background:rgba(232,160,32,0.06); border-color:var(--accent); }
+
+.input-block { margin-bottom:20px; }
+.input-block label { display:block; font-size:13px; color:var(--text2); margin-bottom:8px; }
+textarea, input[type="text"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
+textarea:focus, input:focus { border-color:var(--accent); }
+textarea::placeholder, input::placeholder { color:var(--text3); }
+
+/* Image paste area */
+.commodity-wrap { position:relative; }
+.commodity-wrap textarea { padding-bottom:44px; }
+.paste-hint { position:absolute; bottom:10px; left:14px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); pointer-events:none; }
+.pasted-image-row { display:flex; align-items:center; gap:10px; margin-top:8px; background:var(--surface2); border:1px solid var(--border2); padding:8px 12px; }
+.pasted-thumb { max-height:60px; max-width:120px; object-fit:contain; border:1px solid var(--border2); }
+.pasted-image-row span { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); flex:1; }
+.btn-remove-img { background:none; border:1px solid var(--border2); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; cursor:pointer; transition:all 0.2s; }
+.btn-remove-img:hover { border-color:var(--red); color:var(--red); }
+
+.pill-group { display:flex; gap:8px; flex-wrap:wrap; }
+.pill { padding:7px 15px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; user-select:none; }
+.pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
+
+.toggle-row { display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); cursor:pointer; font-size:12px; font-family:'IBM Plex Mono',monospace; user-select:none; transition:all 0.2s; margin-bottom:8px; }
+.toggle-row.on { border-color:var(--accent); background:rgba(232,160,32,0.07); color:var(--accent); }
+.toggle-check { width:11px; height:11px; border:1px solid currentColor; display:flex; align-items:center; justify-content:center; font-size:8px; flex-shrink:0; }
+
+.btn-launch { display:flex; align-items:center; gap:10px; background:var(--accent); color:var(--bg); border:none; padding:13px 26px; font-family:'Syne',sans-serif; font-weight:700; font-size:14px; cursor:pointer; clip-path:polygon(0 0,100% 0,100% 75%,94% 100%,0 100%); transition:background 0.2s; }
+.btn-launch:hover { background:var(--accent2); }
+.error-panel { background:rgba(231,76,60,0.08); border:1px solid var(--red); padding:11px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--red); margin-top:14px; display:none; }
+.error-panel.active { display:block; }
+
+.loading-panel { background:var(--surface); border:1px solid var(--border2); padding:36px 28px; text-align:center; display:none; }
+.loading-panel.active { display:block; }
+.loader-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:20px; }
+.progress-track { height:4px; background:var(--border); margin:0 auto 8px; width:100%; max-width:400px; border-radius:2px; overflow:hidden; }
+.progress-fill { height:100%; background:var(--accent); width:0%; transition:width 0.6s ease; border-radius:2px; }
+.progress-label { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--accent); margin-bottom:20px; }
+.loader-steps { display:flex; flex-direction:column; gap:4px; align-items:flex-start; max-width:340px; margin:0 auto; }
+.loader-step { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); opacity:0; transition:opacity 0.4s,color 0.4s; }
+.loader-step.visible { opacity:1; color:var(--text2); }
+.loader-step.done { color:var(--green); opacity:1; }
+
+.results-panel { display:none; }
+.results-panel.active { display:block; }
+.results-header { display:flex; align-items:flex-start; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:16px; margin-bottom:16px; }
+.results-title { font-family:'Syne',sans-serif; font-weight:700; font-size:17px; margin-top:4px; }
+.results-count { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--accent); background:rgba(232,160,32,0.1); border:1px solid var(--accent); padding:3px 10px; white-space:nowrap; }
+.results-toolbar { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; align-items:center; }
+.fit-filters { display:flex; gap:0; }
+.fit-filter { padding:6px 12px; font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; border:1px solid var(--border2); border-right:none; background:var(--surface); color:var(--text3); transition:all 0.2s; user-select:none; }
+.fit-filter:last-child { border-right:1px solid var(--border2); }
+.fit-filter.active { background:rgba(232,160,32,0.1); color:var(--accent); border-color:var(--accent); }
+
+.tabs { display:flex; border-bottom:1px solid var(--border); margin-bottom:20px; }
+.tab { padding:9px 18px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; color:var(--text3); background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
+.tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+
+.supplier-card { background:var(--surface); border:1px solid var(--border); padding:13px 16px; display:grid; grid-template-columns:20px 26px 1fr auto; gap:10px; align-items:start; margin-bottom:2px; transition:border-color 0.2s; }
+.supplier-card:hover { border-color:var(--border2); }
+.supplier-card.expanded { border-color:var(--accent); }
+.supplier-card.hidden { display:none; }
+.card-checkbox { padding-top:3px; cursor:pointer; }
+.card-checkbox input { width:13px; height:13px; accent-color:var(--accent); cursor:pointer; }
+.card-num { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text3); padding-top:2px; }
+.card-body { cursor:pointer; }
+.card-name { font-family:'Syne',sans-serif; font-weight:600; font-size:15px; margin-bottom:3px; }
+.card-meta { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
+.card-location { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); }
+.card-source { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); padding:2px 6px; }
+.card-source-link { text-decoration:none; cursor:pointer; transition:all 0.2s; }
+.card-source-link:hover { color:var(--accent); border-color:var(--accent); background:rgba(232,160,32,0.08); }
+.card-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+.tag { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 7px; border:1px solid var(--border2); color:var(--text2); }
+.tag.cert { border-color:var(--blue); color:var(--blue); }
+.card-expand { display:none; grid-column:1/-1; padding-top:12px; margin-top:10px; border-top:1px solid var(--border); }
+.supplier-card.expanded .card-expand { display:block; }
+.card-expand p { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:7px; }
+.card-expand .note { font-size:12px; color:var(--text3); font-style:italic; }
+/* Contact info block */
+.card-contact { display:flex; gap:18px; margin-top:8px; margin-bottom:6px; flex-wrap:wrap; }
+.card-contact-item { display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:12px; }
+.card-contact-label { color:var(--text3); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
+.card-contact-value { color:var(--text); }
+.card-contact-email { color:var(--accent); text-decoration:none; }
+.card-contact-email:hover { text-decoration:underline; }
+.card-url { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--blue); text-decoration:none; }
+.card-url:hover { text-decoration:underline; }
+.fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
+
+.btn-sm { padding:7px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--text2); transition:all 0.2s; }
+.btn-sm:hover { border-color:var(--accent); color:var(--accent); }
+.btn-sm.primary { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
+.btn-sm.refine { border-color:var(--blue); color:var(--blue); background:rgba(74,158,255,0.08); }
+.btn-sm.refine:hover { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
+.btn-reset { padding:6px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:transparent; color:var(--text3); transition:all 0.2s; }
+.btn-reset:hover { color:var(--text2); }
+
+.email-controls { display:flex; gap:8px; margin-bottom:16px; flex-wrap:wrap; }
+.email-card { background:var(--surface); border:1px solid var(--border); margin-bottom:5px; }
+.email-header { display:flex; align-items:center; justify-content:space-between; padding:12px 16px; cursor:pointer; }
+.email-card.open .email-header { border-bottom:1px solid var(--border); }
+.email-to { font-family:'Syne',sans-serif; font-weight:600; font-size:14px; }
+.email-subject { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); margin-top:3px; }
+.email-chevron { color:var(--text3); font-size:12px; transition:transform 0.2s; }
+.email-card.open .email-chevron { transform:rotate(180deg); }
+.email-body { display:none; padding:14px 16px; }
+.email-card.open .email-body { display:block; }
+.email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
+.email-actions { display:flex; gap:8px; margin-top:12px; }
+
+/* Refine modal */
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; display:none; align-items:center; justify-content:center; }
+.modal-overlay.active { display:flex; }
+.modal { background:var(--surface); border:1px solid var(--accent); padding:28px; max-width:520px; width:90%; }
+.modal-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:18px; color:var(--accent); }
+.modal-actions { display:flex; gap:10px; margin-top:18px; }
+
+.toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--accent); color:var(--accent); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 18px; opacity:0; transform:translateY(8px); transition:all 0.3s; pointer-events:none; z-index:999; }
+.toast.show { opacity:1; transform:translateY(0); }
+@keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:translateY(0); } }
+.fade-in { animation:fadeIn 0.3s ease; }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo">
+      <div class="logo-mark">S</div>
+      <div class="logo-text">Supplier<span>Scout</span></div>
+    </div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB</div>
+  </header>
+
+  <div id="inputPanel">
+    <div class="section-label">// NEW SOURCING REQUEST</div>
+    <div class="stages">
+      <div class="stage active">01 DESCRIBE</div>
+      <div class="stage">02 CONFIGURE</div>
+      <div class="stage">03 DISCOVER</div>
+      <div class="stage">04 CAMPAIGN</div>
+    </div>
+
+    <div class="input-block">
+      <label>Describe what you're sourcing — part number, commodity, spec, or plain language <span style="color:var(--text3)">(you can also paste an image)</span></label>
+      <div class="commodity-wrap">
+        <textarea id="commodityInput" rows="4" placeholder="e.g. CNC machined aluminum brackets, 6061-T6, ~500 units/month, tolerances ±0.005&quot;. Or: 0.2mm stainless steel wire, high volume."></textarea>
+        <div class="paste-hint">&#128247; Ctrl+V to paste image</div>
+      </div>
+      <div id="pastedImageRow" class="pasted-image-row" style="display:none;">
+        <img id="pastedThumb" class="pasted-thumb" src="" alt="pasted">
+        <span id="pastedLabel">Image attached</span>
+        <button class="btn-remove-img" onclick="removePastedImage()">&#10005; Remove</button>
+      </div>
+    </div>
+
+    <div class="input-block">
+      <label>Sourcing scope</label>
+      <div class="pill-group" id="scopePills">
+        <div class="pill selected" data-val="domestic">&#127482;&#127480; Domestic Only</div>
+        <div class="pill" data-val="foreign">&#127758; International Only</div>
+        <div class="pill" data-val="both">&#127760; Both</div>
+      </div>
+    </div>
+
+    <div class="input-block" id="countryBlock" style="display:none;">
+      <label>Countries to source from <span style="color:var(--text3)">(comma separated, e.g. China, Taiwan, Germany, Mexico)</span></label>
+      <input type="text" id="countryInput" placeholder="e.g. China, Taiwan, South Korea, Germany, Mexico..." />
+    </div>
+
+    <div class="input-block">
+      <label>Certifications required <span style="color:var(--text3)">(comma separated, e.g. ISO 9001, AS9100, RoHS)</span></label>
+      <input type="text" id="certInput" placeholder="ISO 9001, AS9100, IATF 16949, RoHS..." />
+    </div>
+
+    <div class="input-block">
+      <label>HTS Code <span style="color:var(--text3)">(optional — improves sourcing accuracy)</span></label>
+      <input type="text" id="htsInput" placeholder="e.g. 7318.15, 8544.42.9000..." />
+    </div>
+
+    <div class="input-block">
+      <div id="emailToggle" class="toggle-row on" onclick="toggleOpt('email')">
+        <div class="toggle-check on">&#10003;</div>
+        Include email campaign <span style="color:var(--text3);margin-left:6px;font-size:11px">(slower)</span>
+      </div>
+    </div>
+
+    <div id="emailOptions">
+      <div class="input-block">
+        <label>Your email address <span style="color:var(--text3)">(used to open each outreach email)</span></label>
+        <input type="text" id="senderEmail" placeholder="you@yourcompany.com" />
+      </div>
+      <div class="input-block">
+        <div id="attachToggle" class="toggle-row" onclick="toggleOpt('attach')">
+          <div class="toggle-check">&#10003;</div>
+          Including attachments with emails
+        </div>
+        <div id="attachOptions" style="display:none;margin-top:10px;">
+          <label style="margin-bottom:8px;display:block;font-size:13px;color:var(--text2);">List attachments <span style="color:var(--text3);font-size:12px">(comma separated)</span></label>
+          <input type="text" id="attachInput" placeholder="e.g. spec sheet, engineering drawing, RFQ" />
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-launch" onclick="runSearch()">
+      <span>FIND SUPPLIERS</span><span style="font-size:17px">&#8594;</span>
+    </button>
+    <div class="error-panel" id="errorPanel"></div>
+  </div>
+
+  <div class="loading-panel" id="loadingPanel">
+    <div class="loader-title">Searching supplier networks...</div>
+    <div class="progress-track"><div class="progress-fill" id="progressFill"></div></div>
+    <div class="progress-label" id="progressLabel">0%</div>
+    <div class="loader-steps" id="loaderSteps"></div>
+  </div>
+
+  <div class="results-panel" id="resultsPanel">
+    <div class="results-header">
+      <div>
+        <div class="section-label">// SOURCING RESULTS</div>
+        <div class="results-title" id="resultsTitle"></div>
+      </div>
+      <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
+        <div class="results-count" id="resultsCount"></div>
+        <button class="btn-reset" onclick="reset()">&#8634; New Search</button>
+      </div>
+    </div>
+
+    <div style="background:rgba(232,160,32,0.06);border:1px solid rgba(232,160,32,0.25);padding:9px 14px;margin-bottom:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);line-height:1.7;">
+      &#9888;&nbsp; <span style="color:var(--accent);">AI-generated leads — not live directory data.</span> Verify company names, websites, and contact info before outreach. The "Source" links below each result search that directory for the commodity, not for the specific company.
+    </div>
+    <div class="results-toolbar">
+      <button class="btn-sm refine" onclick="openRefineModal()">&#9998; Refine Search</button>
+      <div class="fit-filters">
+        <div class="fit-filter active" data-fit="all" onclick="setFitFilter('all',this)">ALL</div>
+        <div class="fit-filter" data-fit="high" onclick="setFitFilter('high',this)">HIGH</div>
+        <div class="fit-filter" data-fit="highmed" onclick="setFitFilter('highmed',this)">HIGH + MED</div>
+      </div>
+      <button class="btn-sm" onclick="selectAll(true)">&#9745; Select All</button>
+      <button class="btn-sm" onclick="selectAll(false)">&#9744; Deselect All</button>
+      <button class="btn-sm primary" onclick="printResults()">&#128438; Print Selected</button>
+      <button class="btn-sm primary" onclick="downloadXLSX()">&#8659; Export Selected</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('suppliers',this)">SUPPLIER LIST</button>
+      <button class="tab" id="emailTab" onclick="switchTab('emails',this)" style="display:none;">EMAIL CAMPAIGN</button>
+    </div>
+
+    <div id="suppliersTab">
+      <div id="supplierGrid"></div>
+      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px;display:flex;align-items:center;justify-content:center;">
+        <button class="btn-sm primary" onclick="searchMoreSources()">&#8853; Search More Sources</button>
+      </div>
+    </div>
+
+    <div id="emailsTab" style="display:none;">
+      <div class="email-controls">
+        <button class="btn-sm" onclick="copyAll()">&#8853; Copy All Emails</button>
+        <button class="btn-sm" onclick="document.querySelectorAll('.email-card').forEach(c=>c.classList.add('open'))">&#8595; Expand All</button>
+        <button class="btn-sm" onclick="document.querySelectorAll('.email-card').forEach(c=>c.classList.remove('open'))">&#8593; Collapse All</button>
+      </div>
+      <div id="emailGrid"></div>
+    </div>
+  </div>
+</div>
+
+<!-- Refine Search Modal -->
+<div class="modal-overlay" id="refineModal">
+  <div class="modal">
+    <div class="modal-title">&#9998; Refine Search</div>
+    <div class="input-block">
+      <label>Update your sourcing description</label>
+      <textarea id="refineCommodity" rows="3" placeholder="Refine or update your sourcing description..."></textarea>
+    </div>
+    <div class="input-block">
+      <label>Certifications <span style="color:var(--text3)">(comma separated)</span></label>
+      <input type="text" id="refineCerts" placeholder="ISO 9001, AS9100..." />
+    </div>
+    <div class="input-block">
+      <label>HTS Code <span style="color:var(--text3)">(optional)</span></label>
+      <input type="text" id="refineHts" placeholder="e.g. 7318.15..." />
+    </div>
+    <div class="modal-actions">
+      <button class="btn-launch" onclick="runRefinedSearch()" style="clip-path:none;">RE-RUN SEARCH &#8594;</button>
+      <button class="btn-sm" onclick="closeRefineModal()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+let scope='domestic', suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all';
+let pastedImageData=null, pastedImageType=null;
+let currentCommodity='', currentCerts='', currentCountries='', currentHts='';
+
+const STEPS={
+  domestic:["Analyzing commodity specification","Identifying domestic manufacturers & distributors","Evaluating supplier fit and capabilities","Scoring & ranking results"],
+  foreign:["Analyzing commodity specification","Identifying international manufacturers","Evaluating supplier fit and capabilities","Scoring & ranking results"],
+  both:["Analyzing commodity specification","Identifying domestic & international manufacturers","Evaluating supplier fit and capabilities","Scoring & ranking results"]
+};
+
+// Scope pills
+document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected');
+  scope=p.dataset.val;
+  document.getElementById('countryBlock').style.display=(scope==='foreign'||scope==='both')?'block':'none';
+}));
+
+// Image paste handler
+document.getElementById('commodityInput').addEventListener('paste',e=>{
+  const items=e.clipboardData&&e.clipboardData.items;
+  if(!items) return;
+  for(const item of items){
+    if(item.type.startsWith('image/')){
+      e.preventDefault();
+      const file=item.getAsFile();
+      const reader=new FileReader();
+      reader.onload=ev=>{
+        pastedImageData=ev.target.result.split(',')[1];
+        pastedImageType=item.type;
+        document.getElementById('pastedThumb').src=ev.target.result;
+        document.getElementById('pastedLabel').textContent=file.name||'Pasted image ('+item.type+')';
+        document.getElementById('pastedImageRow').style.display='flex';
+      };
+      reader.readAsDataURL(file);
+      break;
+    }
+  }
+});
+
+function removePastedImage(){
+  pastedImageData=null; pastedImageType=null;
+  document.getElementById('pastedImageRow').style.display='none';
+  document.getElementById('pastedThumb').src='';
+}
+
+function toggleOpt(type){
+  if(type==='email'){
+    includeEmails=!includeEmails;
+    const el=document.getElementById('emailToggle');
+    el.classList.toggle('on',includeEmails);
+    el.querySelector('.toggle-check').innerHTML=includeEmails?'&#10003;':'';
+    document.getElementById('emailOptions').style.display=includeEmails?'block':'none';
+  } else if(type==='attach'){
+    includeAttach=!includeAttach;
+    const el=document.getElementById('attachToggle');
+    el.classList.toggle('on',includeAttach);
+    el.querySelector('.toggle-check').innerHTML=includeAttach?'&#10003;':'';
+    document.getElementById('attachOptions').style.display=includeAttach?'block':'none';
+  }
+}
+
+function buildSupplierPrompt(commodity,scope,certs,countries,hts){
+  const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
+  const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
+  const countryText=(countries&&(scope==='foreign'||scope==='both'))?'Preferred countries: '+countries+'.':'';
+  const htsText=hts?'HTS Code: '+hts+' — use this to refine commodity classification and identify suppliers that commonly trade this code.':'';
+  return 'You are an expert sourcing analyst with deep knowledge of global manufacturing.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of up to 10 supplier objects. Only include companies you have HIGH CONFIDENCE actually exist as manufacturers or distributors of this commodity. If you are uncertain whether a specific company makes this product, omit them. It is better to return fewer confident entries than to invent or guess companies.\n\nEach object must have:\n- id (number)\n- name (real company name you are confident exists)\n- location (city, state or city, country)\n- website (the company real domain only if you are highly confident it is correct, otherwise use empty string)\n- source (directory type where this supplier is commonly listed: one of ThomasNet / Kompass / Global Sources / ImportYeti / MFG.com / Europages / HKTDC / IndustryNet / Trade Association / Direct)\n- specialty (1 sentence describing their relevant capabilities)\n- tags (2-4 short capability strings)\n- certs (array of certifications if known, else empty array)\n- fit (high/medium/low based on match to this commodity)\n- fitReason (1 sentence explaining the fit score)\n- contactEmail (always empty string — do not guess or fabricate)\n- contactName (always empty string — do not guess or fabricate)\n\nDo NOT invent company names, websites, or email addresses. Do not bias results toward any single country or sourcing directory. Prioritize established manufacturers and well-known industry players. Return ONLY a valid JSON array. No markdown. No preamble.';
+}
+
+function buildEmailPrompt(commodity,attach,attachList){
+  const attachNote=attach&&attachList?' Reference that attachments are included: '+attachList+'.':'';
+  return 'Write a single professional supplier outreach email template.\n\nCommodity: "'+commodity+'"'+attachNote+'\n\nReturn a JSON object (not array) with: subject (string), body (string with [SUPPLIER_NAME] placeholder where appropriate, 3 short paragraphs: introduce the sourcing need referencing their specialty, request a quote or capabilities discussion'+(attach&&attachList?', mention the attached documents':'')+', polite closing). Do NOT include a signature block. Return ONLY a valid JSON object. No markdown.';
+}
+
+async function callAPI(payload){
+  const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const data=await res.json();
+  if(data.error) throw new Error(data.error);
+  let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
+  raw=raw.replace(/```json[\s\S]*?```/g,m=>m.slice(7,-3)).replace(/```/g,'').trim();
+  // Find outermost JSON structure — prefer { if it appears before [
+  const firstBrace=raw.indexOf('{');
+  const firstBracket=raw.indexOf('[');
+  let start, end;
+  if(firstBrace===-1 && firstBracket===-1) throw new Error('Invalid response format');
+  if(firstBrace!==-1 && (firstBracket===-1 || firstBrace<firstBracket)){
+    start=firstBrace; end=raw.lastIndexOf('}');
+  } else {
+    start=firstBracket; end=raw.lastIndexOf(']');
+  }
+  if(start===-1||end===-1) throw new Error('Invalid response format');
+  return JSON.parse(raw.slice(start,end+1));
+}
+
+async function callAPIWithImage(payload, imageData, imageType){
+  // Build message with image content
+  const userContent=[
+    {type:'image',source:{type:'base64',media_type:imageType,data:imageData}},
+    {type:'text',text:payload.messages[0].content}
+  ];
+  const newPayload={...payload,messages:[{role:'user',content:userContent}]};
+  return callAPI(newPayload);
+}
+
+function setProgress(pct,label){
+  document.getElementById('progressFill').style.width=pct+'%';
+  document.getElementById('progressLabel').textContent=label;
+}
+
+async function runSearch(){
+  const commodity=document.getElementById('commodityInput').value.trim();
+  const certs=document.getElementById('certInput').value.trim();
+  const countries=document.getElementById('countryInput').value.trim();
+  const hts=document.getElementById('htsInput').value.trim();
+  if(!commodity&&!pastedImageData){showError('Please describe what you are sourcing.');return;}
+  currentCommodity=commodity||(pastedImageData?'[see attached image]':'');
+  currentCerts=certs;
+  currentCountries=countries;
+  currentHts=hts;
+  document.getElementById('errorPanel').classList.remove('active');
+  document.getElementById('inputPanel').style.display='none';
+  await _executeSearch(currentCommodity, scope, certs, countries, hts, true);
+}
+
+async function _executeSearch(commodity, searchScope, certs, countries, hts, isFirst){
+  document.getElementById('loadingPanel').classList.add('active');
+  setProgress(0,'Starting...');
+
+  const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
+  const baseSteps=[...STEPS[searchScope]];
+  if(includeEmails&&isFirst) baseSteps.push('Drafting email campaign');
+  const stepsEl=document.getElementById('loaderSteps');
+  stepsEl.innerHTML=baseSteps.map(s=>'<div class="loader-step">&#8594; '+s+'</div>').join('');
+  const stepEls=stepsEl.querySelectorAll('.loader-step');
+  const supplierStepCount=baseSteps.length-((includeEmails&&isFirst)?1:0);
+  const supplierPct=(includeEmails&&isFirst)?60:100;
+  let i=0;
+  const interval=setInterval(()=>{
+    if(i<stepEls.length){
+      if(i>0) stepEls[i-1].classList.add('done');
+      stepEls[i].classList.add('visible');
+      const pct=i<supplierStepCount?Math.round((i+1)/supplierStepCount*supplierPct):Math.round(supplierPct+((i-supplierStepCount+1))*(100-supplierPct));
+      setProgress(Math.min(pct,92),baseSteps[i]);
+      i++;
+    } else clearInterval(interval);
+  },950);
+
+  try{
+    const supplierPayload={
+      model:'claude-haiku-4-5-20251001',
+      max_tokens:6000,
+      system:'Return only a valid JSON array. No markdown. No preamble.',
+      messages:[{role:'user',content:buildSupplierPrompt(commodity,searchScope,certs,countries,hts)}]
+    };
+
+    let newSuppliers;
+    if(pastedImageData&&isFirst){
+      newSuppliers=await callAPIWithImage(supplierPayload, pastedImageData, pastedImageType);
+    } else {
+      newSuppliers=await callAPI(supplierPayload);
+    }
+
+    if(isFirst){
+      suppliers=newSuppliers;
+    } else {
+      // Merge, deduplicate
+      const existingNames=new Set(suppliers.map(s=>s.name.toLowerCase().trim()));
+      const fresh=newSuppliers.filter(s=>!existingNames.has(s.name.toLowerCase().trim()));
+      const startId=suppliers.length+1;
+      fresh.forEach((s,idx)=>s.id=startId+idx);
+      suppliers=[...suppliers,...fresh];
+      showToast(fresh.length+' new suppliers added!');
+    }
+
+    if(includeEmails&&isFirst){
+      const emailTemplate=await callAPI({
+        model:'claude-haiku-4-5-20251001',
+        max_tokens:2000,
+        system:'Return only a valid JSON object. No markdown. No preamble.',
+        messages:[{role:'user',content:buildEmailPrompt(commodity,includeAttach,attachList)}]
+      });
+      emails=[emailTemplate]; // single shared template
+    } else if(!isFirst){ /* keep existing emails */ }
+
+    clearInterval(interval);
+    setProgress(100,'Complete!');
+    setTimeout(()=>{
+      document.getElementById('loadingPanel').classList.remove('active');
+      if(isFirst){
+        renderResults(commodity);
+      } else {
+        document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
+        renderSupplierCards();
+      }
+    },400);
+  }catch(err){
+    clearInterval(interval);
+    document.getElementById('loadingPanel').classList.remove('active');
+    if(isFirst){
+      document.getElementById('inputPanel').style.display='block';
+      showError('Search failed: '+err.message);
+    } else {
+      showError('Search failed: '+err.message);
+    }
+  }
+}
+
+async function searchMoreSources(){
+  // Continue searching same commodity, same scope, for more suppliers
+  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries, currentHts, false);
+}
+
+// Refine modal
+function openRefineModal(){
+  document.getElementById('refineCommodity').value=currentCommodity!=='[see attached image]'?currentCommodity:'';
+  document.getElementById('refineCerts').value=currentCerts;
+  document.getElementById('refineModal').classList.add('active');
+}
+function closeRefineModal(){
+  document.getElementById('refineModal').classList.remove('active');
+}
+async function runRefinedSearch(){
+  const newCommodity=document.getElementById('refineCommodity').value.trim();
+  const newCerts=document.getElementById('refineCerts').value.trim();
+  const newHts=document.getElementById('refineHts').value.trim();
+  if(!newCommodity){showToast('Please enter a description');return;}
+  currentCommodity=newCommodity;
+  currentCerts=newCerts;
+  currentHts=newHts;
+  closeRefineModal();
+  suppliers=[]; emails=[];
+  document.getElementById('resultsPanel').classList.remove('active');
+  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries, currentHts, true);
+}
+
+function setFitFilter(val,el){
+  fitFilter=val;
+  document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
+  el.classList.add('active');
+  applyFitFilter();
+}
+
+function applyFitFilter(){
+  document.querySelectorAll('.supplier-card').forEach(card=>{
+    const fit=card.dataset.fit;
+    let show=true;
+    if(fitFilter==='high') show=fit==='high';
+    else if(fitFilter==='highmed') show=fit==='high'||fit==='medium';
+    card.classList.toggle('hidden',!show);
+  });
+}
+
+function selectAll(val){
+  document.querySelectorAll('.supplier-card:not(.hidden) .card-checkbox input').forEach(cb=>cb.checked=val);
+}
+
+function getSelectedSuppliers(){
+  const selected=[];
+  document.querySelectorAll('.supplier-card').forEach(card=>{
+    const cb=card.querySelector('.card-checkbox input');
+    if(cb&&cb.checked) selected.push(suppliers.find(s=>s.id===parseInt(card.dataset.id)));
+  });
+  return selected.filter(Boolean);
+}
+
+function renderResults(commodity){
+  document.getElementById('resultsPanel').classList.add('active');
+  document.getElementById('resultsTitle').textContent=commodity.length>65?commodity.substring(0,65)+'...':commodity;
+  document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
+  document.getElementById('emailTab').style.display=emails.length?'block':'none';
+  renderSupplierCards();
+  renderEmailCards();
+}
+
+
+
+function buildSearchQuery(){
+  // Build a clean product search string from commodity + HTS + certs + countries
+  // Never include company names — only product/commodity terms
+  let parts=[];
+  if(currentCommodity && currentCommodity!=='[see attached image]'){
+    // Take first 60 chars to keep URLs clean
+    parts.push(currentCommodity.substring(0,60));
+  }
+  if(currentHts) parts.push('HTS '+currentHts);
+  return parts.join(' ').trim();
+}
+
+function getSourceSearchUrl(source){
+  const query=buildSearchQuery();
+  const q=encodeURIComponent(query);
+  const s=(source||'').toLowerCase();
+  if(s.includes('made-in-china')) return 'https://www.made-in-china.com/multi-search/'+q+'/F1/1.html';
+  if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
+  if(s.includes('alibaba'))       return 'https://www.alibaba.com/trade/search?SearchText='+q;
+  if(s.includes('global sources'))return 'https://www.globalsources.com/si/AS/Search/g/'+q+'.html';
+  if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
+  if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
+  if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
+  if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
+  if(s.includes('hktdc'))         return 'https://www.hktdc.com/sourcing/hk_trade_name_directory.htm?lang=en&companyName='+q;
+  if(s.includes('europages'))     return 'https://www.europages.co.uk/en/pg/'+q+'-0.html';
+  if(s.includes("maker")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
+  return 'https://www.google.com/search?q='+q+'+supplier';
+}
+function renderSupplierCards(){
+  const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
+  const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
+  const grid=document.getElementById('supplierGrid');
+  grid.innerHTML='';
+  suppliers.forEach(s=>{
+    const d=document.createElement('div');
+    d.className='supplier-card fade-in';
+    d.dataset.id=s.id; d.dataset.fit=s.fit;
+    const fc=fitColor(s.fit);
+    const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
+
+
+    // Contact info — omitted; AI-generated contacts would be fabricated
+    const contactHtml='';
+
+
+    // Website — only show if present; add unverified indicator
+    const websiteHtml=s.website?'<div style="margin-top:6px;"><a class="card-url" href="'+s.website+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>':'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
+    const sourceUrl=getSourceSearchUrl(s.source);
+    const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a><span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:6px;">(verify this supplier exists)</span></div>';
+
+    d.innerHTML=
+      '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
+      +'<div class="card-num">'+String(s.id).padStart(2,'0')+'</div>'
+      +'<div class="card-body">'
+        +'<div class="card-name">'+s.name+'</div>'
+        +'<div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div>'
+        +'<div class="card-tags">'+tags+'</div>'
+        +'<div class="card-expand">'
+          +'<p>'+s.specialty+'</p>'
+          +'<p class="note">'+s.fitReason+'</p>'
+          +contactHtml
+          +websiteHtml
+          +sourceHtml
+        +'</div>'
+      +'</div>'
+      +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
+
+    d.querySelector('.card-body').addEventListener('click',()=>d.classList.toggle('expanded'));
+    grid.appendChild(d);
+  });
+  applyFitFilter();
+}
+
+function renderEmailCards(){
+  const eg=document.getElementById('emailGrid');
+  eg.innerHTML='';
+  if(!emails.length) return;
+
+  // Single shared template — show once with usage note
+  const template=emails[0];
+  const noteDiv=document.createElement('div');
+  noteDiv.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 14px;background:var(--surface);border:1px solid var(--border2);';
+  noteDiv.textContent='One email template generated. Contact emails are not auto-generated — find real contact info on the supplier\'s website or the directory link, then use "Open in Email" to launch your email client.';
+  eg.appendChild(noteDiv);
+
+  // Per-supplier cards that open mailto
+  const senderEmail=document.getElementById('senderEmail').value.trim();
+  const selectedSups=suppliers.filter(s=>s.fit==='high'||s.fit==='medium').slice(0,20);
+
+  selectedSups.forEach(s=>{
+    const d=document.createElement('div');
+    d.className='email-card';
+    // Personalize subject and body with supplier name
+    const personalizedBody=(template.body||'').replace(/\[SUPPLIER_NAME\]/g,s.name);
+    const personalizedSubject=template.subject||'Sourcing Inquiry';
+    const safe=personalizedBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    const toAddr=s.contactEmail||'';
+    const mailtoHref='mailto:'+encodeURIComponent(toAddr)+'?subject='+encodeURIComponent(personalizedSubject)+'&body='+encodeURIComponent(personalizedBody);
+
+    d.innerHTML=
+      '<div class="email-header" onclick="this.parentElement.classList.toggle(\'open\')">'
+        +'<div>'
+          +'<div class="email-to">'+s.name+(toAddr?' &nbsp;<span style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);font-weight:400">'+toAddr+'</span>':'')+'</div>'
+          +'<div class="email-subject">'+personalizedSubject+'</div>'
+        +'</div>'
+        +'<span class="email-chevron">&#9660;</span>'
+      +'</div>'
+      +'<div class="email-body">'
+        +'<div class="email-text">'+safe+'</div>'
+        +'<div class="email-actions">'
+          +'<a class="btn-sm primary" href="'+mailtoHref+'" onclick="event.stopPropagation()" style="text-decoration:none;display:inline-block;">&#9993; Open in Email</a>'
+          +'<button class="btn-sm" onclick="copyText(decodeURIComponent(\''+encodeURIComponent(personalizedBody)+'\'))">Copy Body</button>'
+          +'<button class="btn-sm" onclick="copyText(decodeURIComponent(\''+encodeURIComponent(personalizedSubject)+'\'))">Copy Subject</button>'
+        +'</div>'
+      +'</div>';
+    eg.appendChild(d);
+  });
+}
+
+function switchTab(tab,el){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  el.classList.add('active');
+  document.getElementById('suppliersTab').style.display=tab==='suppliers'?'block':'none';
+  document.getElementById('emailsTab').style.display=tab==='emails'?'block':'none';
+}
+
+function copyAll(){
+  if(!emails.length){showToast('No email template generated');return;}
+  const template=emails[0];
+  const all=suppliers.slice(0,20).map((s,i)=>{
+    const body=(template.body||'').replace(/\[SUPPLIER_NAME\]/g,s.name);
+    return '--- '+(i+1)+'. TO: '+(s.contactEmail||s.name)+' ---\nSUBJECT: '+template.subject+'\n\n'+body;
+  }).join('\n\n'+'='.repeat(50)+'\n\n');
+  copyText(all); showToast('All emails copied!');
+}
+
+function printResults(){
+  const sel=getSelectedSuppliers();
+  const src=sel.length?sel:suppliers;
+  const commodity=document.getElementById('resultsTitle').textContent;
+  let html='<html><head><title>SupplierScout - '+commodity+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;}h1{font-size:18px;margin-bottom:4px;}.meta{font-size:11px;color:#666;margin-bottom:20px;}table{width:100%;border-collapse:collapse;}th{background:#111;color:#fff;padding:8px 10px;text-align:left;font-size:11px;}td{padding:7px 10px;border-bottom:1px solid #e0e0e0;font-size:11px;vertical-align:top;}.hi{color:#1a9e50;font-weight:bold;}.me{color:#b07000;font-weight:bold;}.lo{color:#888;}@media print{body{padding:0;}}</style></head><body>';
+  html+='<h1>SupplierScout Results</h1><div class="meta">Commodity: '+commodity+' &nbsp;|&nbsp; '+src.length+' suppliers &nbsp;|&nbsp; '+new Date().toLocaleDateString()+'</div>';
+  html+='<table><thead><tr><th>#</th><th>Company</th><th>Location</th><th>Source</th><th>Contact</th><th>Email</th><th>Specialty</th><th>Fit</th></tr></thead><tbody>';
+  src.forEach(s=>{
+    const cls=s.fit==='high'?'hi':s.fit==='medium'?'me':'lo';
+    html+='<tr><td>'+s.id+'</td><td><strong>'+s.name+'</strong></td><td>'+s.location+'</td><td>'+s.source+'</td><td>'+(s.contactName||'—')+'</td><td>'+(s.contactEmail||'—')+'</td><td>'+s.specialty+'</td><td class="'+cls+'">'+s.fit.toUpperCase()+'</td></tr>';
+  });
+  html+='</tbody></table></body></html>';
+  const w=window.open('','_blank');
+  w.document.write(html);w.document.close();w.focus();
+  setTimeout(()=>w.print(),500);
+}
+
+function downloadXLSX(){
+  const sel=getSelectedSuppliers();
+  const src=sel.length?sel:suppliers;
+  const commodity=document.getElementById('resultsTitle').textContent;
+  const wsData=[['#','Company','Location','Source','Contact Name','Contact Email','Specialty','Tags','Certifications','Fit','Fit Reason','Website']];
+  src.forEach(s=>wsData.push([s.id,s.name,s.location,s.source,s.contactName||'',s.contactEmail||'',s.specialty,(s.tags||[]).join(', '),(s.certs||[]).join(', '),s.fit.toUpperCase(),s.fitReason,s.website]));
+  const wb=XLSX.utils.book_new();
+  const ws=XLSX.utils.aoa_to_sheet(wsData);
+  ws['!cols']=[{wch:4},{wch:28},{wch:20},{wch:14},{wch:22},{wch:30},{wch:45},{wch:30},{wch:20},{wch:8},{wch:40},{wch:35}];
+  XLSX.utils.book_append_sheet(wb,ws,'Suppliers');
+  if(emails.length){
+    const template=emails[0];
+    const ed=[['Company','Contact Email','Subject','Email Body']];
+    src.forEach(s=>{
+      const body=(template.body||'').replace(/\[SUPPLIER_NAME\]/g,s.name);
+      ed.push([s.name,s.contactEmail||'',template.subject,body]);
+    });
+    const ws2=XLSX.utils.aoa_to_sheet(ed);
+    ws2['!cols']=[{wch:28},{wch:30},{wch:50},{wch:100}];
+    XLSX.utils.book_append_sheet(wb,ws2,'Emails');
+  }
+  XLSX.writeFile(wb,'SupplierScout_'+commodity.substring(0,30).replace(/[^a-z0-9]/gi,'_')+'_'+new Date().toISOString().slice(0,10)+'.xlsx');
+  showToast('Downloaded!');
+}
+
+function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('Copied!'));}
+
+function showToast(msg){
+  const t=document.getElementById('toast');t.textContent=msg+' \u2713';t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2500);
+}
+
+function showError(msg){const p=document.getElementById('errorPanel');p.textContent='\u26A0 '+msg;p.classList.add('active');}
+
+function reset(){
+  document.getElementById('resultsPanel').classList.remove('active');
+  document.getElementById('inputPanel').style.display='block';
+  document.getElementById('commodityInput').value='';
+  document.getElementById('senderEmail').value='';
+  document.getElementById('certInput').value='';
+  document.getElementById('countryInput').value='';
+  document.getElementById('htsInput').value='';
+  document.getElementById('countryBlock').style.display='none';
+  removePastedImage();
+  scope='domestic'; fitFilter='all';
+  currentCommodity=''; currentCerts=''; currentCountries='';
+  document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
+  document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
+  suppliers=[]; emails=[];
+  document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
+  document.querySelector('.fit-filter[data-fit="all"]').classList.add('active');
+  switchTab('suppliers',document.querySelector('.tab'));
+}
+</script>
+</body>
+</html>
