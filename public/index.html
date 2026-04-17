@@ -392,7 +392,7 @@ function buildSupplierPrompt(commodity,scope,certs,countries,hts){
   const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
   const countryText=(countries&&(scope==='foreign'||scope==='both'))?'Preferred countries: '+countries+'.':'';
   const htsText=hts?'HTS Code: '+hts+' — use this to sharpen commodity classification.':'';
-  return 'You are an expert sourcing analyst with deep knowledge of global manufacturing.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of up to 10 supplier objects. Only include companies you are highly confident actually manufacture or distribute this commodity. Omit any company you are uncertain about — fewer accurate results beat more hallucinated ones.\n\nFor each supplier object include:\n- id (number)\n- name (real company name)\n- location (city, state or city, country)\n- website (company domain if you know it, else empty string)\n- source (one of: ThomasNet / Kompass / MFG.com / Europages / IndustryNet / Makers Row / Trade Association / Direct)\n- specialty (1 sentence on their relevant capabilities)\n- tags (2-4 short capability strings)\n- certs (known certifications, else empty array)\n- fit ("high"/"medium"/"low")\n- fitReason (1 sentence)\n- contactEmail ("")\n- contactName ("")\n\nDo not fabricate names, websites, or emails. Do not bias toward any country unless specified. Prioritize established, well-known manufacturers. Return ONLY a valid JSON array. No markdown. No preamble.';
+  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of REAL suppliers for this commodity. Apply these strict rules:\n\n1. ONLY include companies you have seen referenced in multiple real-world contexts (industry publications, trade databases, news, their own websites). Do not invent or guess company names.\n2. If you are not certain a company actually manufactures this specific commodity, leave them out.\n3. Prefer large, well-established manufacturers and distributors you are highly confident about over smaller or obscure ones you are less sure of.\n4. For websites: only include a domain if you are certain it belongs to this company. Leave as empty string if unsure.\n5. It is acceptable and preferred to return fewer than 10 results if you cannot find 10 that meet these standards.\n\nEach object must have:\n- id (number)\n- name\n- location (city, state/country)\n- website (confirmed domain or empty string)\n- source (ThomasNet / Kompass / MFG.com / Europages / IndustryNet / Makers Row / Trade Association / Direct)\n- specialty (1 sentence)\n- tags (2-4 strings)\n- certs (array or [])\n- fit ("high"/"medium"/"low")\n- fitReason (1 sentence)\n- contactEmail ("")\n- contactName ("")\n\nReturn ONLY a valid JSON array. No markdown. No preamble.';
 }
 
 function buildEmailPrompt(commodity,attach,attachList){
@@ -672,7 +672,11 @@ function renderSupplierCards(){
       +'</div>'
       +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
 
-    d.querySelector('.card-body').addEventListener('click',()=>d.classList.toggle('expanded'));
+    // Only toggle expand when clicking the card header area, not links inside expand
+    d.querySelector('.card-body').addEventListener('click', e => {
+      if(e.target.closest('a')) return; // let links through
+      d.classList.toggle('expanded');
+    });
     grid.appendChild(d);
   });
   applyFitFilter();
