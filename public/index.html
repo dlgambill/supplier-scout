@@ -622,6 +622,18 @@ function renderSupplierCards(){
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
   const grid=document.getElementById('supplierGrid');
   grid.innerHTML='';
+  if(!suppliers.length){
+    grid.innerHTML='<div style="padding:32px 20px;text-align:center;border:1px solid var(--border);background:var(--surface);">'
+      +'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:16px;margin-bottom:12px;color:var(--text);">No suppliers found</div>'
+      +'<div style="font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text3);line-height:1.8;max-width:480px;margin:0 auto;">'
+      +'Possible reasons:<br>'
+      +'&bull; The product may be licensed IP (e.g. branded toys) with no open manufacturing<br>'
+      +'&bull; The search terms may be too specific — try simplifying your description<br>'
+      +'&bull; The scope (domestic/international) may not match where this product is made<br>'
+      +'&bull; Try clicking <strong style="color:var(--accent);">Search More Sources</strong> below for a second attempt'
+      +'</div></div>';
+    return;
+  }
   suppliers.forEach(s=>{
     const d=document.createElement('div');
     d.className='supplier-card fade-in';
