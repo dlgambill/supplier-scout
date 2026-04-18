@@ -154,11 +154,12 @@ LIVE SEARCH RESULTS:
 ${searchContext}
 
 Instructions:
-- Extract every distinct company that appears anywhere in the search results. Be aggressive — if a company name appears in a snippet, title, or URL, include them.
+- Extract every distinct manufacturer, supplier, or distributor that appears in the search results.
 - Do not invent companies not present in the results.
 - A company's website comes directly from the URL in the search results — use the root domain.
-- For directory listings (ThomasNet, Kompass, Alibaba etc.), extract ALL supplier names mentioned in titles and snippets — there may be multiple companies per result.
-- Ignore results that are clearly news articles, how-to guides, forums, or retail product listings (Amazon, Home Depot, etc.).
+- For directory listings (ThomasNet, Kompass, Alibaba etc.), extract ALL supplier names mentioned in titles and snippets.
+- Only skip results that are purely: news articles, how-to guides, Reddit/forum posts, or individual consumer retail pages (Amazon product listings). If there is any chance the result is a supplier or manufacturer, include them.
+- When in doubt, include the company — it is better to return a supplier that needs verification than to return zero results.
 - Score fit based on how well their capabilities match the sourcing request.
 - Deduplicate — if the same company appears in multiple results, include them once with the best available data.
 
@@ -229,7 +230,7 @@ Return ONLY a valid JSON array. No markdown. No preamble.`;
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 6000,
+        max_tokens: 8000,
         system: 'Return only a valid JSON array. No markdown. No preamble.',
         messages
       })
