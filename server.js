@@ -18,12 +18,48 @@ async function serpSearch(query, serpApiKey, num = 10) {
   const res = await fetch(`https://serpapi.com/search.json?${params}`);
   if (!res.ok) throw new Error(`SerpAPI error: ${res.status} ${res.statusText}`);
   const data = await res.json();
-  return (data.organic_results || []).map(r => ({
-    title: r.title || '',
-    url: r.link || '',
-    snippet: r.snippet || '',
-    displayed_url: r.displayed_link || ''
-  }));
+
+  // Extract knowledge graph location if present (free, comes with search)
+  const kg = data.knowledge_graph || {};
+  const kgLocation = [kg.headquarters, kg.address, kg.city]
+    .filter(Boolean).join(', ');
+
+  const genericTlds = new Set(['com','net','org','io','co','gov','edu','info','biz','us']);
+  const results = (data.organic_results || []).map(r => {
+    // Infer country from ccTLD (e.g. .de, .cn, .ca)
+    const tldMatch = (r.link || '').match(/https?:\/\/[^/]+\.([a-z]{2})(?:\/|$)/);
+    const tldCountry = (tldMatch && !genericTlds.has(tldMatch[1])) ? tldMatch[1].toUpperCase() : '';
+    return {
+      title: r.title || '',
+      url: r.link || '',
+      displayed_url: r.displayed_link || '',
+      snippet: r.snippet || '',
+      tld_country: tldCountry,
+      address: r.address || ''
+    };
+  });
+
+  return { results, kgLocation };
+}
+
+// Lightweight location lookup for a specific company name
+async function serpLocationLookup(companyName, serpApiKey) {
+  try {
+    const params = new URLSearchParams({
+      q: `"${companyName}" company headquarters city state`,
+      api_key: serpApiKey,
+      num: '3',
+      hl: 'en',
+      gl: 'us'
+    });
+    const res = await fetch(`https://serpapi.com/search.json?${params}`);
+    if (!res.ok) return '';
+    const data = await res.json();
+    const kg = data.knowledge_graph || {};
+    return [kg.headquarters, kg.address, kg.city].filter(Boolean).join(', ');
+  } catch (e) {
+    return '';
+  }
 }
 
 // Build targeted search queries based on scope
@@ -78,12 +114,15 @@ app.post('/api/search', async (req, res) => {
         }
       }
 
-      // Format results for Claude
-      searchContext = allResults.map(({ query, results }) => {
+      // Format results for Claude — include address/TLD hints for location inference
+      searchContext = allResults.map(({ query, results, kgLocation }) => {
         if (!results.length) return `QUERY: ${query}\nNo results.\n`;
-        return `QUERY: ${query}\nRESULTS:\n` + results.map((r, i) =>
-          `  ${i + 1}. ${r.title}\n     URL: ${r.url}\n     ${r.snippet}`
-        ).join('\n') + '\n';
+        const header = kgLocation ? `QUERY: ${query} [Knowledge Graph: ${kgLocation}]` : `QUERY: ${query}`;
+        return header + '\nRESULTS:\n' + results.map((r, i) => {
+          const locHint = r.tld_country ? ` [country TLD: .${r.tld_country.toLowerCase()}]` : '';
+          const addrHint = r.address ? ` [address: ${r.address}]` : '';
+          return `  ${i + 1}. ${r.title}\n     URL: ${r.url}${locHint}${addrHint}\n     ${r.snippet}`;
+        }).join('\n') + '\n';
       }).join('\n---\n');
     }
 
@@ -120,7 +159,7 @@ Instructions:
 Return a JSON array of up to 10 supplier objects, each with:
 - id (number)
 - name (company name from search results)
-- location (city, state or city, country — infer from snippet/URL if possible)
+- location (city, state or city, country — derive from: snippet text, knowledge graph data, URL country TLD hints, or your training knowledge of the company. For US companies use "City, ST" format. For international use "City, Country". Use your knowledge of well-known companies to fill gaps. Only use "Unknown" as a last resort if you truly have no signal.)
 - website (root domain from search result URL, e.g. "acme.com")
 - source (which query/directory found them: ThomasNet / Direct / Web Search / Kompass / MFG.com)
 - specialty (1 sentence based on their snippet)
