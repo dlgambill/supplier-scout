@@ -66,20 +66,25 @@ async function serpLocationLookup(companyName, serpApiKey) {
 function buildSearchQueries(commodity, scope, countries, hts, certs) {
   const queries = [];
   const base = commodity.substring(0, 80);
+  // Strip quotes for broader queries
+  const baseLoose = base.replace(/['"]/g, '');
   const htsPart = hts ? ` HTS ${hts}` : '';
   const certPart = certs ? ` ${certs}` : '';
 
   if (scope === 'domestic' || scope === 'both') {
-    queries.push(`"${base}" manufacturer USA supplier${certPart}`);
-    queries.push(`site:thomasnet.com "${base}"`);
+    queries.push(`"${base}" manufacturer USA${certPart}`);
+    queries.push(`site:thomasnet.com "${baseLoose}"`);
+    queries.push(`${baseLoose} manufacturer supplier United States`);
+    queries.push(`${baseLoose} wholesale distributor USA`);
   }
   if (scope === 'foreign' || scope === 'both') {
-    const countryList = countries || 'manufacturer';
+    const countryList = countries || 'international';
     queries.push(`"${base}" manufacturer ${countryList}${certPart}`);
-    queries.push(`"${base}" supplier importer${htsPart}`);
+    queries.push(`${baseLoose} supplier exporter ${countryList}`);
+    queries.push(`${baseLoose} manufacturer importer${htsPart}`);
   }
-  if (scope === 'domestic') {
-    queries.push(`"${base}" distributor wholesale USA`);
+  if (hts) {
+    queries.push(`HTS ${hts} supplier manufacturer`);
   }
 
   return queries;
@@ -107,7 +112,7 @@ app.post('/api/search', async (req, res) => {
 
       for (const query of queries) {
         try {
-          const results = await serpSearch(query, serpKey, 8);
+          const results = await serpSearch(query, serpKey, 10);
           allResults.push({ query, results });
         } catch (e) {
           console.warn(`SerpAPI query failed: "${query}" — ${e.message}`);
@@ -149,14 +154,15 @@ LIVE SEARCH RESULTS:
 ${searchContext}
 
 Instructions:
-- Extract real companies from the search results above. Only include companies that appear in the search results.
-- Do not invent companies that are not in the results.
+- Extract every distinct company that appears anywhere in the search results. Be aggressive — if a company name appears in a snippet, title, or URL, include them.
+- Do not invent companies not present in the results.
 - A company's website comes directly from the URL in the search results — use the root domain.
-- Score fit based on how well their known capabilities match the sourcing request.
-- If a result is a directory listing (ThomasNet, Kompass etc.), extract the supplier name from the title/snippet.
-- Ignore results that are clearly news articles, forums, or irrelevant pages.
+- For directory listings (ThomasNet, Kompass, Alibaba etc.), extract ALL supplier names mentioned in titles and snippets — there may be multiple companies per result.
+- Ignore results that are clearly news articles, how-to guides, forums, or retail product listings (Amazon, Home Depot, etc.).
+- Score fit based on how well their capabilities match the sourcing request.
+- Deduplicate — if the same company appears in multiple results, include them once with the best available data.
 
-Return a JSON array of up to 10 supplier objects, each with:
+Return a JSON array of up to 15 supplier objects, each with:
 - id (number)
 - name (company name from search results)
 - location (city, state or city, country — derive from: snippet text, knowledge graph data, URL country TLD hints, or your training knowledge of the company. For US companies use "City, ST" format. For international use "City, Country". Use your knowledge of well-known companies to fill gaps. Only use "Unknown" as a last resort if you truly have no signal.)
