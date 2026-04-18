@@ -62,8 +62,27 @@ async function serpLocationLookup(companyName, serpApiKey) {
   }
 }
 
+// Strip user constraint language that pollutes search queries
+// e.g. "wholesale only, no retail" should not be in a Google search
+function cleanCommodityForSearch(commodity) {
+  return commodity
+    .replace(/wholesale only/gi, '')
+    .replace(/no retail/gi, '')
+    .replace(/retail only/gi, '')
+    .replace(/domestic only/gi, '')
+    .replace(/usa only/gi, '')
+    .replace(/us only/gi, '')
+    .replace(/only/gi, '')
+    .replace(/,\s*,/g, ',')  // clean up double commas
+    .replace(/\s{2,}/g, ' ') // clean up extra spaces
+    .trim()
+    .replace(/^,|,$/g, '')   // trim leading/trailing commas
+    .trim();
+}
+
 // Build targeted search queries based on scope
 function buildSearchQueries(commodity, scope, countries, hts, certs) {
+  commodity = cleanCommodityForSearch(commodity);
   const queries = [];
   const base = commodity.substring(0, 80);
   // Strip quotes for broader queries
