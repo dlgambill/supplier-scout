@@ -253,6 +253,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div>
         <div class="section-label">// SOURCING RESULTS</div>
         <div class="results-title" id="resultsTitle"></div>
+        <div id="liveSearchBadge" style="display:none;margin-top:6px;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 8px;width:fit-content;background:rgba(46,204,113,0.07);">&#9679; LIVE SEARCH</div>
       </div>
       <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
         <div class="results-count" id="resultsCount"></div>
@@ -260,8 +261,11 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       </div>
     </div>
 
+    <div id="degradedBanner" style="display:none;background:rgba(231,76,60,0.07);border:1px solid rgba(231,76,60,0.3);padding:9px 14px;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#e74c3c;line-height:1.7;">
+      &#9888;&nbsp; <strong>Degraded mode</strong> — SERPAPI_KEY not configured. Results are AI-generated from training data and may be inaccurate. Add a SerpAPI key for live search.
+    </div>
     <div style="background:rgba(232,160,32,0.06);border:1px solid rgba(232,160,32,0.25);padding:9px 14px;margin-bottom:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);line-height:1.7;">
-      &#9888;&nbsp; <span style="color:var(--accent);">AI-generated leads — not live directory data.</span> Verify company names, websites, and contact info before outreach. The "Source" links below each result search that directory for the commodity, not for the specific company.
+      &#9888;&nbsp; <span style="color:var(--accent);">Always verify suppliers before outreach.</span> Use the "Verify on Google" button on each card to confirm the company is real and makes this product.
     </div>
     <div class="results-toolbar">
       <button class="btn-sm refine" onclick="openRefineModal()">&#9998; Refine Search</button>
@@ -330,9 +334,9 @@ let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries='', currentHts='';
 
 const STEPS={
-  domestic:["Analyzing commodity specification","Identifying domestic manufacturers & distributors","Evaluating supplier fit and capabilities","Scoring & ranking results"],
-  foreign:["Analyzing commodity specification","Identifying international manufacturers","Evaluating supplier fit and capabilities","Scoring & ranking results"],
-  both:["Analyzing commodity specification","Identifying domestic & international manufacturers","Evaluating supplier fit and capabilities","Scoring & ranking results"]
+  domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
+  foreign:["Running live Google searches","Scanning international trade directories","Extracting & verifying companies","Scoring supplier fit"],
+  both:["Running live Google searches","Scanning domestic & international directories","Extracting & verifying companies","Scoring supplier fit"]
 };
 
 // Scope pills
@@ -387,30 +391,15 @@ function toggleOpt(type){
   }
 }
 
-function buildSupplierPrompt(commodity,scope,certs,countries,hts){
-  const scopeText=scope==='domestic'?'US domestic suppliers only':scope==='foreign'?'international/foreign suppliers only':'both US domestic and international suppliers';
-  const certText=certs?'Required certifications: '+certs+'.':'No specific certifications required.';
-  const countryText=(countries&&(scope==='foreign'||scope==='both'))?'Preferred countries: '+countries+'.':'';
-  const htsText=hts?'HTS Code: '+hts+' — use this to sharpen commodity classification.':'';
-  return 'You are an expert sourcing analyst.\n\nSourcing: "'+commodity+'"\nScope: '+scopeText+'\n'+certText+'\n'+countryText+'\n'+htsText+'\n\nReturn a JSON array of REAL suppliers for this commodity. Apply these strict rules:\n\n1. ONLY include companies you have seen referenced in multiple real-world contexts (industry publications, trade databases, news, their own websites). Do not invent or guess company names.\n2. If you are not certain a company actually manufactures this specific commodity, leave them out.\n3. Prefer large, well-established manufacturers and distributors you are highly confident about over smaller or obscure ones you are less sure of.\n4. For websites: only include a domain if you are certain it belongs to this company. Leave as empty string if unsure.\n5. It is acceptable and preferred to return fewer than 10 results if you cannot find 10 that meet these standards.\n\nEach object must have:\n- id (number)\n- name\n- location (city, state/country)\n- website (confirmed domain or empty string)\n- source (ThomasNet / Kompass / MFG.com / Europages / IndustryNet / Makers Row / Trade Association / Direct)\n- specialty (1 sentence)\n- tags (2-4 strings)\n- certs (array or [])\n- fit ("high"/"medium"/"low")\n- fitReason (1 sentence)\n- contactEmail ("")\n- contactName ("")\n\nReturn ONLY a valid JSON array. No markdown. No preamble.';
-}
 
-function buildEmailPrompt(commodity,attach,attachList){
-  const attachNote=attach&&attachList?' Reference that attachments are included: '+attachList+'.':'';
-  return 'Write a single professional supplier outreach email template.\n\nCommodity: "'+commodity+'"'+attachNote+'\n\nReturn a JSON object (not array) with: subject (string), body (string with [SUPPLIER_NAME] placeholder where appropriate, 3 short paragraphs: introduce the sourcing need referencing their specialty, request a quote or capabilities discussion'+(attach&&attachList?', mention the attached documents':'')+', polite closing). Do NOT include a signature block. Return ONLY a valid JSON object. No markdown.';
-}
 
-async function callAPI(payload){
-  const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  const data=await res.json();
-  if(data.error) throw new Error(data.error);
+function parseClaudeJSON(data) {
   let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
   raw=raw.replace(/```json[\s\S]*?```/g,m=>m.slice(7,-3)).replace(/```/g,'').trim();
-  // Find outermost JSON structure — prefer { if it appears before [
   const firstBrace=raw.indexOf('{');
   const firstBracket=raw.indexOf('[');
-  let start, end;
   if(firstBrace===-1 && firstBracket===-1) throw new Error('Invalid response format');
+  let start, end;
   if(firstBrace!==-1 && (firstBracket===-1 || firstBrace<firstBracket)){
     start=firstBrace; end=raw.lastIndexOf('}');
   } else {
@@ -420,14 +409,28 @@ async function callAPI(payload){
   return JSON.parse(raw.slice(start,end+1));
 }
 
-async function callAPIWithImage(payload, imageData, imageType){
-  // Build message with image content
-  const userContent=[
-    {type:'image',source:{type:'base64',media_type:imageType,data:imageData}},
-    {type:'text',text:payload.messages[0].content}
-  ];
-  const newPayload={...payload,messages:[{role:'user',content:userContent}]};
-  return callAPI(newPayload);
+async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType){
+  const body={commodity, scope, certs, countries, hts, imageData:imageData||null, imageType:imageType||null};
+  const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data=await res.json();
+  if(data.error) throw new Error(data.error);
+  // Show live search badge if SerpAPI was used
+  if(data.usedSerpApi){
+    document.getElementById('liveSearchBadge').style.display='inline-flex';
+    document.getElementById('degradedBanner').style.display='none';
+  } else {
+    document.getElementById('liveSearchBadge').style.display='none';
+    document.getElementById('degradedBanner').style.display='block';
+  }
+  return parseClaudeJSON(data.claudeData);
+}
+
+async function callEmail(commodity, includeAttach, attachList){
+  const body={commodity, includeAttach, attachList};
+  const res=await fetch('/api/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+  const data=await res.json();
+  if(data.error) throw new Error(data.error);
+  return parseClaudeJSON(data);
 }
 
 function setProgress(pct,label){
@@ -474,19 +477,9 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   },950);
 
   try{
-    const supplierPayload={
-      model:'claude-haiku-4-5-20251001',
-      max_tokens:6000,
-      system:'Return only a valid JSON array. No markdown. No preamble.',
-      messages:[{role:'user',content:buildSupplierPrompt(commodity,searchScope,certs,countries,hts)}]
-    };
-
-    let newSuppliers;
-    if(pastedImageData&&isFirst){
-      newSuppliers=await callAPIWithImage(supplierPayload, pastedImageData, pastedImageType);
-    } else {
-      newSuppliers=await callAPI(supplierPayload);
-    }
+    const newSuppliers = await callSearch(commodity, searchScope, certs, countries, hts,
+      (pastedImageData&&isFirst)?pastedImageData:null,
+      (pastedImageType&&isFirst)?pastedImageType:null);
 
     if(isFirst){
       suppliers=newSuppliers;
@@ -501,13 +494,8 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     }
 
     if(includeEmails&&isFirst){
-      const emailTemplate=await callAPI({
-        model:'claude-haiku-4-5-20251001',
-        max_tokens:2000,
-        system:'Return only a valid JSON object. No markdown. No preamble.',
-        messages:[{role:'user',content:buildEmailPrompt(commodity,includeAttach,attachList)}]
-      });
-      emails=[emailTemplate]; // single shared template
+      const emailTemplate=await callEmail(commodity, includeAttach, attachList);
+      emails=[emailTemplate];
     } else if(!isFirst){ /* keep existing emails */ }
 
     clearInterval(interval);
