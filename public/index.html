@@ -50,6 +50,8 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 
 .pill-group { display:flex; gap:8px; flex-wrap:wrap; }
 .pill { padding:7px 15px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; user-select:none; }
+.source-check { padding:5px 12px; border:1px solid var(--border2); background:var(--surface); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; transition:all 0.2s; user-select:none; }
+.source-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 .pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 
 .toggle-row { display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); cursor:pointer; font-size:12px; font-family:'IBM Plex Mono',monospace; user-select:none; transition:all 0.2s; margin-bottom:8px; }
@@ -212,6 +214,20 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div class="input-block">
+      <label>Sources to search <span style="color:var(--text3)">(Gemini will also use any other sources it finds useful)</span></label>
+      <div id="sourceCheckboxes" style="display:flex;flex-wrap:wrap;gap:8px;margin-top:4px;">
+        <div class="source-check selected" data-val="ThomasNet">ThomasNet</div>
+        <div class="source-check selected" data-val="ImportYeti">ImportYeti</div>
+        <div class="source-check selected" data-val="Kompass">Kompass</div>
+        <div class="source-check" data-val="Alibaba">Alibaba</div>
+        <div class="source-check" data-val="Europages">Europages</div>
+        <div class="source-check" data-val="MFG.com">MFG.com</div>
+        <div class="source-check" data-val="GlobalSources">Global Sources</div>
+        <div class="source-check" data-val="IndustryNet">IndustryNet</div>
+      </div>
+    </div>
+
+    <div class="input-block">
       <div id="emailToggle" class="toggle-row on" onclick="toggleOpt('email')">
         <div class="toggle-check on">&#10003;</div>
         Include email campaign <span style="color:var(--text3);margin-left:6px;font-size:11px">(slower)</span>
@@ -331,13 +347,18 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 <script>
 let scope='domestic', suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all';
 let pastedImageData=null, pastedImageType=null;
-let currentCommodity='', currentCerts='', currentCountries='', currentHts='';
+let currentCommodity='', currentCerts='', currentCountries='', currentHts='', currentSources=[];
 
 const STEPS={
   domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
   foreign:["Running live Google searches","Scanning international trade directories","Extracting & verifying companies","Scoring supplier fit"],
   both:["Running live Google searches","Scanning domestic & international directories","Extracting & verifying companies","Scoring supplier fit"]
 };
+
+// Source checkboxes
+document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.addEventListener('click',()=>{
+  el.classList.toggle('selected');
+}));
 
 // Scope pills
 document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
@@ -410,7 +431,7 @@ function parseClaudeJSON(data) {
 }
 
 async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType){
-  const body={commodity, scope, certs, countries, hts, imageData:imageData||null, imageType:imageType||null};
+  const body={commodity, scope, certs, countries, hts, sources:currentSources, imageData:imageData||null, imageType:imageType||null};
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
@@ -448,6 +469,7 @@ async function runSearch(){
   currentCerts=certs;
   currentCountries=countries;
   currentHts=hts;
+  currentSources=[...document.querySelectorAll('#sourceCheckboxes .source-check.selected')].map(el=>el.dataset.val);
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
   await _executeSearch(currentCommodity, scope, certs, countries, hts, true);
@@ -815,6 +837,9 @@ function reset(){
   scope='domestic'; fitFilter='all';
   currentCommodity=''; currentCerts=''; currentCountries='';
   document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
+  document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.classList.remove('selected'));
+  document.querySelectorAll('#sourceCheckboxes .source-check[data-val="ThomasNet"], #sourceCheckboxes .source-check[data-val="ImportYeti"], #sourceCheckboxes .source-check[data-val="Kompass"]').forEach(el=>el.classList.add('selected'));
+  currentSources=[];
   document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
   suppliers=[]; emails=[];
   document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
