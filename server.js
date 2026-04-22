@@ -55,11 +55,12 @@ async function callGemini(prompt, geminiKey) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        system_instruction: { parts: [{ text: 'You are a sourcing analyst. After searching, you MUST return a JSON array. Never return an empty response.' }] },
         contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ googleSearch: {} }],  // Google Search grounding
+        tools: [{ googleSearch: {} }],
         generationConfig: {
-          temperature: 0.1,   // low temp = more factual, less creative
-          maxOutputTokens: 8192
+          temperature: 0.1,
+          maxOutputTokens: 16384
         }
       })
     }
@@ -77,9 +78,38 @@ async function callGemini(prompt, geminiKey) {
     ?.map(p => p.text)
     ?.join('') || '';
   if (!text) {
-    console.error('Gemini empty response. finishReason:', finishReason);
+    // Gemini used all tokens on search tool but returned no content
+    // Extract grounding sources and make a second no-tool call to format results
+    const grounding = data?.candidates?.[0]?.groundingMetadata;
+    const sources = grounding?.groundingChunks?.map(c => c?.web?.uri).filter(Boolean) || [];
+    const searchQueries = grounding?.webSearchQueries || [];
+    console.warn('Gemini returned no text content. finishReason:', finishReason);
+    console.warn('Search queries used:', searchQueries);
+    if (sources.length > 0 || searchQueries.length > 0) {
+      // Make a follow-up call without search tool to get the JSON response
+      console.log('Making follow-up call to format grounding results...');
+      const followUpPrompt = prompt + '\n\nNote: You already searched the web. Now return the JSON array based on what you found.';
+      const followUpRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=\${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: followUpPrompt }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
+          })
+        }
+      );
+      const followUpData = await followUpRes.json();
+      const followUpText = followUpData?.candidates?.[0]?.content?.parts
+        ?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+      if (followUpText) {
+        console.log('Follow-up response received');
+        return followUpText;
+      }
+    }
     console.error('Full Gemini response:', JSON.stringify(data).substring(0, 800));
-    throw new Error(`Gemini returned empty response (finishReason: ${finishReason})`);
+    throw new Error(`Gemini returned empty response (finishReason: \${finishReason})`);
   }
   console.log('Gemini raw response (first 500 chars):', text.substring(0, 500));
   return text;
