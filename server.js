@@ -72,24 +72,54 @@ function isUSLocation(location) {
   return US_STATES.has(last);
 }
 
+// Known non-supplier keywords that Gemini sometimes returns as company names
+const JUNK_NAMES = ['vertex ai search', 'google search', 'web search', 'search results',
+  'thomasnet search', 'bing search', 'yahoo search', 'duckduckgo'];
+
+function isJunkSupplier(s) {
+  const name = (s.name || '').toLowerCase().trim();
+  return !name || JUNK_NAMES.some(j => name.includes(j));
+}
+
+// Known non-US country indicators in location strings
+const FOREIGN_INDICATORS = [
+  'china', 'taiwan', 'germany', 'japan', 'korea', 'india', 'uk', 'united kingdom',
+  'england', 'france', 'italy', 'spain', 'mexico', 'canada', 'australia', 'brazil',
+  'poland', 'czech', 'sweden', 'netherlands', 'belgium', 'switzerland', 'austria',
+  'turkey', 'indonesia', 'vietnam', 'thailand', 'malaysia', 'singapore', 'hong kong',
+  'israel', 'uae', 'dubai', 'russia', 'ukraine', 'portugal', 'denmark', 'finland',
+  'norway', 'hungary', 'romania', 'slovakia', 'croatia', 'serbia', 'bulgaria',
+  'shandong', 'guangdong', 'zhejiang', 'jiangsu', 'fujian', 'hangzhou', 'shenzhen',
+  'shanghai', 'beijing', 'dongguan', 'ningbo', 'tianjin', 'chongqing', 'wuhan'
+];
+
+function isForeignLocation(location) {
+  if (!location) return false;
+  const loc = location.toLowerCase();
+  return FOREIGN_INDICATORS.some(f => loc.includes(f));
+}
+
 function filterByScope(suppliers, scope, countries) {
   if (!Array.isArray(suppliers)) return suppliers;
+  // Always remove junk entries
+  suppliers = suppliers.filter(s => !isJunkSupplier(s));
+
   if (scope === 'domestic') {
-    // Keep only US suppliers — if location unknown, keep it (can't confirm it's foreign)
+    // Remove confirmed foreign locations — keep US and unknowns
     return suppliers.filter(s => {
-      const loc = (s.location || '').toUpperCase();
-      if (!loc || loc === 'N/A' || loc === 'UNKNOWN') return true; // keep unknowns
-      return isUSLocation(s.location);
+      if (!s.location || s.location === 'N/A' || s.location === 'Unknown') return true;
+      if (isForeignLocation(s.location)) return false;
+      return true; // keep if not confirmed foreign
     });
   }
   if (scope === 'foreign') {
-    // Remove US suppliers
+    // Remove confirmed US locations — keep foreign and unknowns
     return suppliers.filter(s => {
       if (!s.location || s.location === 'N/A' || s.location === 'Unknown') return true;
       return !isUSLocation(s.location);
     });
   }
-  return suppliers; // 'both' — no filtering
+  return suppliers;
 }
 
 // ── Gemini call with Google Search grounding ───────────────────────────────
