@@ -52,6 +52,10 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .pill { padding:7px 15px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; transition:all 0.2s; user-select:none; }
 .source-check { padding:5px 12px; border:1px solid var(--border2); background:var(--surface); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; transition:all 0.2s; user-select:none; }
 .source-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
+.country-check { padding:5px 12px; border:1px solid var(--border2); background:var(--surface); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; transition:all 0.2s; user-select:none; border-radius:2px; }
+.country-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
+.country-check.usa { border-color:var(--blue); color:var(--blue); }
+.country-check.usa.selected { border-color:var(--blue); background:rgba(74,158,255,0.1); color:var(--blue); }
 .pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 
 .toggle-row { display:inline-flex; align-items:center; gap:7px; padding:9px 14px; border:1px solid var(--border2); background:var(--surface); color:var(--text2); cursor:pointer; font-size:12px; font-family:'IBM Plex Mono',monospace; user-select:none; transition:all 0.2s; margin-bottom:8px; }
@@ -190,17 +194,44 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div class="input-block">
-      <label>Sourcing scope</label>
-      <div class="pill-group" id="scopePills">
-        <div class="pill selected" data-val="domestic">&#127482;&#127480; Domestic Only</div>
-        <div class="pill" data-val="foreign">&#127758; International Only</div>
-        <div class="pill" data-val="both">&#127760; Both</div>
+      <label>Source countries <span style="color:var(--text3)">(select all that apply)</span></label>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <div class="source-check selected" onclick="selectAllCountries()" id="allCountriesBtn">&#127760; All Countries</div>
+        <div class="source-check" onclick="clearAllCountries()">Clear All</div>
       </div>
-    </div>
-
-    <div class="input-block" id="countryBlock" style="display:none;">
-      <label>Countries to source from <span style="color:var(--text3)">(comma separated, e.g. China, Taiwan, Germany, Mexico)</span></label>
-      <input type="text" id="countryInput" placeholder="e.g. China, Taiwan, South Korea, Germany, Mexico..." />
+      <div id="countryCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
+        <div class="country-check usa selected" data-val="USA">🇺🇸 USA</div>
+        <div class="country-check" data-val="China">🇨🇳 China</div>
+        <div class="country-check" data-val="Mexico">🇲🇽 Mexico</div>
+        <div class="country-check" data-val="Canada">🇨🇦 Canada</div>
+        <div class="country-check" data-val="Germany">🇩🇪 Germany</div>
+        <div class="country-check" data-val="Japan">🇯🇵 Japan</div>
+        <div class="country-check" data-val="South Korea">🇰🇷 South Korea</div>
+        <div class="country-check" data-val="United Kingdom">🇬🇧 UK</div>
+        <div class="country-check" data-val="Taiwan">🇹🇼 Taiwan</div>
+        <div class="country-check" data-val="India">🇮🇳 India</div>
+        <div class="country-check" data-val="Vietnam">🇻🇳 Vietnam</div>
+        <div class="country-check" data-val="Italy">🇮🇹 Italy</div>
+        <div class="country-check" data-val="France">🇫🇷 France</div>
+        <div class="country-check" data-val="Ireland">🇮🇪 Ireland</div>
+        <div class="country-check" data-val="Switzerland">🇨🇭 Switzerland</div>
+        <div class="country-check" data-val="Netherlands">🇳🇱 Netherlands</div>
+        <div class="country-check" data-val="Malaysia">🇲🇾 Malaysia</div>
+        <div class="country-check" data-val="Thailand">🇹🇭 Thailand</div>
+        <div class="country-check" data-val="Brazil">🇧🇷 Brazil</div>
+        <div class="country-check" data-val="Belgium">🇧🇪 Belgium</div>
+        <div class="country-check" data-val="Singapore">🇸🇬 Singapore</div>
+        <div class="country-check" data-val="Australia">🇦🇺 Australia</div>
+        <div class="country-check" data-val="Indonesia">🇮🇩 Indonesia</div>
+        <div class="country-check" data-val="Israel">🇮🇱 Israel</div>
+        <div class="country-check" data-val="Spain">🇪🇸 Spain</div>
+        <div class="country-check" data-val="Austria">🇦🇹 Austria</div>
+        <div class="country-check" data-val="Cambodia">🇰🇭 Cambodia</div>
+        <div class="country-check" id="otherCountryCheck" data-val="other">+ Other</div>
+      </div>
+      <div id="otherCountryInput" style="display:none;margin-top:8px;">
+        <input type="text" id="countryInput" placeholder="e.g. Bangladesh, Ethiopia, Poland..." />
+      </div>
     </div>
 
     <div class="input-block">
@@ -345,9 +376,9 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let scope='domestic', suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all';
+let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all';
 let pastedImageData=null, pastedImageType=null;
-let currentCommodity='', currentCerts='', currentCountries='', currentHts='', currentSources=[];
+let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[];
 
 const STEPS={
   domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
@@ -360,13 +391,55 @@ document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.addE
   el.classList.toggle('selected');
 }));
 
-// Scope pills
-document.querySelectorAll('#scopePills .pill').forEach(p=>p.addEventListener('click',()=>{
-  document.querySelectorAll('#scopePills .pill').forEach(x=>x.classList.remove('selected'));
-  p.classList.add('selected');
-  scope=p.dataset.val;
-  document.getElementById('countryBlock').style.display=(scope==='foreign'||scope==='both')?'block':'none';
+// Country checkboxes
+document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.addEventListener('click',()=>{
+  if(el.id==='otherCountryCheck'){
+    el.classList.toggle('selected');
+    document.getElementById('otherCountryInput').style.display=el.classList.contains('selected')?'block':'none';
+  } else {
+    el.classList.toggle('selected');
+  }
 }));
+
+// Get selected countries as array
+function getSelectedCountries(){
+  const selected=[];
+  document.querySelectorAll('#countryCheckboxes .country-check.selected').forEach(el=>{
+    if(el.id==='otherCountryCheck') return; // skip the Other toggle itself
+    selected.push(el.dataset.val);
+  });
+  // Add any typed "other" countries
+  const otherCheck=document.getElementById('otherCountryCheck');
+  if(otherCheck&&otherCheck.classList.contains('selected')){
+    const otherVal=document.getElementById('countryInput').value.trim();
+    if(otherVal) otherVal.split(',').map(c=>c.trim()).filter(Boolean).forEach(c=>selected.push(c));
+  }
+  return selected;
+}
+
+// Derive scope from selected countries (for server compatibility)
+function getScopeFromCountries(countries){
+  if(!countries.length) return 'both';
+  const hasUSA=countries.includes('USA');
+  const hasForeign=countries.some(c=>c!=='USA');
+  if(hasUSA&&!hasForeign) return 'domestic';
+  if(!hasUSA&&hasForeign) return 'foreign';
+  return 'both';
+}
+
+function selectAllCountries(){
+  document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>{
+    if(el.id==='otherCountryCheck') return;
+    el.classList.add('selected');
+  });
+  document.getElementById('allCountriesBtn').classList.add('selected');
+}
+
+function clearAllCountries(){
+  document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
+  document.getElementById('otherCountryInput').style.display='none';
+  document.getElementById('allCountriesBtn').classList.remove('selected');
+}
 
 // Image paste handler
 document.getElementById('commodityInput').addEventListener('paste',e=>{
@@ -442,7 +515,7 @@ function parseClaudeJSON(data) {
 }
 
 async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType){
-  const body={commodity, scope, certs, countries, hts, sources:currentSources, imageData:imageData||null, imageType:imageType||null};
+  const body={commodity, scope, certs, countries, hts, sources:currentSources, selectedCountries:currentCountries, imageData:imageData||null, imageType:imageType||null};
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
@@ -473,17 +546,17 @@ function setProgress(pct,label){
 async function runSearch(){
   const commodity=document.getElementById('commodityInput').value.trim();
   const certs=document.getElementById('certInput').value.trim();
-  const countries=document.getElementById('countryInput').value.trim();
   const hts=document.getElementById('htsInput').value.trim();
   if(!commodity&&!pastedImageData){showError('Please describe what you are sourcing.');return;}
   currentCommodity=commodity||(pastedImageData?'[see attached image]':'');
   currentCerts=certs;
-  currentCountries=countries;
+  currentCountries=getSelectedCountries();
   currentHts=hts;
   currentSources=[...document.querySelectorAll('#sourceCheckboxes .source-check.selected')].map(el=>el.dataset.val);
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
-  await _executeSearch(currentCommodity, scope, certs, countries, hts, true);
+  const scope=getScopeFromCountries(currentCountries);
+  await _executeSearch(currentCommodity, scope, certs, currentCountries.filter(c=>c!=='USA').join(', '), hts, true);
 }
 
 async function _executeSearch(commodity, searchScope, certs, countries, hts, isFirst){
@@ -843,15 +916,15 @@ function reset(){
   document.getElementById('certInput').value='';
   document.getElementById('countryInput').value='';
   document.getElementById('htsInput').value='';
-  document.getElementById('countryBlock').style.display='none';
+  document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
-  scope='domestic'; fitFilter='all';
-  currentCommodity=''; currentCerts=''; currentCountries='';
-  document.querySelectorAll('#scopePills .pill').forEach(p=>p.classList.remove('selected'));
+  fitFilter='all';
+  currentCommodity=''; currentCerts=''; currentCountries=[];
+  document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
+  document.querySelector('#countryCheckboxes .country-check[data-val="USA"]').classList.add('selected');
   document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.classList.remove('selected'));
   document.querySelectorAll('#sourceCheckboxes .source-check[data-val="ThomasNet"], #sourceCheckboxes .source-check[data-val="ImportYeti"], #sourceCheckboxes .source-check[data-val="Kompass"]').forEach(el=>el.classList.add('selected'));
   currentSources=[];
-  document.querySelector('#scopePills .pill[data-val="domestic"]').classList.add('selected');
   suppliers=[]; emails=[];
   document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
   document.querySelector('.fit-filter[data-fit="all"]').classList.add('active');
