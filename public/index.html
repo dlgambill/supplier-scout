@@ -200,7 +200,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
         <div class="source-check" onclick="clearAllCountries()">Clear All</div>
       </div>
       <div id="countryCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
-        <div class="country-check usa selected" data-val="USA">🇺🇸 USA</div>
+        <div class="country-check usa" data-val="USA">🇺🇸 USA</div>
         <div class="country-check" data-val="China">🇨🇳 China</div>
         <div class="country-check" data-val="Mexico">🇲🇽 Mexico</div>
         <div class="country-check" data-val="Canada">🇨🇦 Canada</div>
@@ -921,7 +921,7 @@ function reset(){
   fitFilter='all';
   currentCommodity=''; currentCerts=''; currentCountries=[];
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
-  document.querySelector('#countryCheckboxes .country-check[data-val="USA"]').classList.add('selected');
+  // No country selected by default after reset
   document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.classList.remove('selected'));
   document.querySelectorAll('#sourceCheckboxes .source-check[data-val="ThomasNet"], #sourceCheckboxes .source-check[data-val="ImportYeti"], #sourceCheckboxes .source-check[data-val="Kompass"]').forEach(el=>el.classList.add('selected'));
   currentSources=[];
