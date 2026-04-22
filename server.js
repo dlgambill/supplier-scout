@@ -122,10 +122,25 @@ function filterByScope(suppliers, scope, countries) {
   return suppliers;
 }
 
-// ── Gemini call with Google Search grounding ───────────────────────────────
+// ── Gemini call with model cascade ────────────────────────────────────────
+const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite-preview'];
+
 async function callGemini(prompt, geminiKey, scope='', countries='') {
+  for (const model of GEMINI_MODELS) {
+    try {
+      console.log(`Trying Gemini model: ${model}`);
+      const text = await callGeminiModel(prompt, geminiKey, model, scope, countries);
+      if (text) return text;
+    } catch (err) {
+      console.warn(`${model} failed: ${err.message}. Trying next model...`);
+    }
+  }
+  throw new Error('All Gemini models failed');
+}
+
+async function callGeminiModel(prompt, geminiKey, model, scope='', countries='') {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -133,63 +148,43 @@ async function callGemini(prompt, geminiKey, scope='', countries='') {
         system_instruction: { parts: [{ text: 'You are a sourcing analyst. After searching, you MUST return a JSON array. Never return an empty response.' }] },
         contents: [{ parts: [{ text: prompt }] }],
         tools: [{ googleSearch: {} }],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 16384
-        }
+        generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
       })
     }
   );
   if (!res.ok) {
     const err = await res.text();
-    console.error('Gemini API raw error:', err);
-    throw new Error(`Gemini API error ${res.status}: ${err}`);
+    throw new Error(`Gemini API error ${res.status}: ${err.substring(0, 200)}`);
   }
   const data = await res.json();
   const candidate = data?.candidates?.[0];
   const finishReason = candidate?.finishReason || 'unknown';
-  const text = candidate?.content?.parts
-    ?.filter(p => p.text)
-    ?.map(p => p.text)
-    ?.join('') || '';
+  const text = candidate?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+
   if (!text) {
-    // Gemini used all tokens on search tool but returned no content
-    // Extract grounding sources and make a second no-tool call to format results
-    const grounding = data?.candidates?.[0]?.groundingMetadata;
-    const sources = grounding?.groundingChunks?.map(c => c?.web?.uri).filter(Boolean) || [];
-    const searchQueries = grounding?.webSearchQueries || [];
-    console.warn('Gemini returned no text content. finishReason:', finishReason);
-    console.warn('Search queries used:', searchQueries);
-    if (true) { // Always attempt follow-up when Gemini returns empty content
-      // Make a follow-up call without search tool to get the JSON response
-      console.log('Making follow-up call to format grounding results...');
-      const geoReminder = scope === 'foreign'
-        ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.` : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
-        : scope === 'domestic' ? `IMPORTANT: Only include US-based suppliers. Exclude ALL international/foreign companies.` : '';
-      const followUpPrompt = prompt + `\n\nNote: You already searched the web. Now return the JSON array based on what you found. ${geoReminder} Return ONLY a valid JSON array.`;
-      const followUpRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=\${geminiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: followUpPrompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
-          })
-        }
-      );
-      const followUpData = await followUpRes.json();
-      const followUpText = followUpData?.candidates?.[0]?.content?.parts
-        ?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
-      if (followUpText) {
-        console.log('Follow-up response received');
-        return followUpText;
+    console.warn(`${model} returned empty content. finishReason: ${finishReason}. Trying follow-up...`);
+    // Make a follow-up call without search tool
+    const geoReminder = scope === 'foreign'
+      ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.`
+                   : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
+      : scope === 'domestic' ? `IMPORTANT: Only include US-based suppliers. Exclude ALL foreign companies.` : '';
+    const followUp = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt + `\n\nReturn the JSON array now. ${geoReminder} Return ONLY a valid JSON array.` }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
+        })
       }
-    }
-    console.error('Full Gemini response:', JSON.stringify(data).substring(0, 800));
-    throw new Error(`Gemini returned empty response (finishReason: ${finishReason})`);
+    );
+    const followData = await followUp.json();
+    const followText = followData?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+    if (followText) { console.log(`Follow-up on ${model} succeeded`); return followText; }
+    throw new Error(`${model} returned empty response (finishReason: ${finishReason})`);
   }
-  console.log('Gemini raw response (first 500 chars):', text.substring(0, 500));
+  console.log(`${model} response received (first 200 chars):`, text.substring(0, 200));
   return text;
 }
 
