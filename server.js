@@ -110,7 +110,7 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, imageData, imageType } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, imageData, imageType } = req.body;
     const cleanedCommodity = cleanCommodity(commodity);
 
     const scopeText = scope === 'domestic' ? 'US domestic suppliers only'
@@ -130,10 +130,9 @@ ${htsText}
 
 Search strategy:
 - Search Google for: "${cleanedCommodity}" manufacturer supplier
-- Search ThomasNet for domestic suppliers
-- Search trade directories and import/export records
 - Look for company websites, trade show listings, and industry directories
 - For international: search by country/region as specified
+${sources && sources.length ? `- The user has specifically requested results from these sources — make sure to search each one:\n${sources.map(s => `  * Search ${s} for "${cleanedCommodity}"`).join('\n')}` : '- Search ThomasNet, trade directories, and import/export records'}
 
 Extract every real manufacturer, distributor, or supplier you find. Return a JSON array of up to 15 suppliers. For each include:
 - id (number, starting at 1)
