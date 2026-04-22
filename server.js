@@ -74,11 +74,18 @@ function isUSLocation(location) {
 
 // Known non-supplier keywords that Gemini sometimes returns as company names
 const JUNK_NAMES = ['vertex ai search', 'google search', 'web search', 'search results',
-  'thomasnet search', 'bing search', 'yahoo search', 'duckduckgo'];
+  'thomasnet search', 'bing search', 'yahoo search', 'duckduckgo', 'no specific company',
+  'alibaba search result', 'globalsources search result', 'kompass search result',
+  'search result', 'no company name', 'not provided', 'various suppliers'];
 
 function isJunkSupplier(s) {
   const name = (s.name || '').toLowerCase().trim();
-  return !name || JUNK_NAMES.some(j => name.includes(j));
+  if (!name) return true;
+  if (JUNK_NAMES.some(j => name.includes(j))) return true;
+  // Catch any "X Search Result" pattern
+  if (/search result/i.test(name)) return true;
+  if (/no (specific|company|name)/i.test(name)) return true;
+  return false;
 }
 
 // Known non-US country indicators in location strings
@@ -99,17 +106,24 @@ function isForeignLocation(location) {
   return FOREIGN_INDICATORS.some(f => loc.includes(f));
 }
 
-function filterByScope(suppliers, scope, countries) {
+function filterByScope(suppliers, scope, countries, selectedCountries) {
   if (!Array.isArray(suppliers)) return suppliers;
   // Always remove junk entries
   suppliers = suppliers.filter(s => !isJunkSupplier(s));
 
   if (scope === 'domestic') {
-    // Remove confirmed foreign locations — keep US and unknowns
+    // For domestic: only keep suppliers with a confirmed US location OR truly unknown location
+    // If Gemini returned a location but it's not recognizably US, remove it
     return suppliers.filter(s => {
-      if (!s.location || s.location === 'N/A' || s.location === 'Unknown') return true;
-      if (isForeignLocation(s.location)) return false;
-      return true; // keep if not confirmed foreign
+      const loc = (s.location || '').trim();
+      if (!loc || loc === 'N/A' || loc === 'Unknown' || loc === 'N/A, USA') return true; // keep unknowns
+      if (isForeignLocation(loc)) return false; // confirmed foreign — remove
+      if (isUSLocation(loc)) return true; // confirmed US — keep
+      // Location present but unrecognized — check if it contains any US indicators
+      const locUp = loc.toUpperCase();
+      if (locUp.includes('USA') || locUp.includes('U.S') || locUp.includes('UNITED STATES')) return true;
+      // If we can't confirm it's US, remove it for domestic searches
+      return false;
     });
   }
   if (scope === 'foreign') {
@@ -119,17 +133,30 @@ function filterByScope(suppliers, scope, countries) {
       return !isUSLocation(s.location);
     });
   }
+  // If specific countries were selected (not just domestic/foreign), filter by them
+  if (selectedCountries && selectedCountries.length) {
+    const hasUSA = selectedCountries.includes('USA');
+    const foreignSelected = selectedCountries.filter(c => c !== 'USA').map(c => c.toLowerCase());
+    return suppliers.filter(s => {
+      const loc = (s.location || '').toLowerCase();
+      if (!loc || loc === 'n/a' || loc === 'unknown') return true;
+      if (isUSLocation(s.location) && hasUSA) return true;
+      if (foreignSelected.length && foreignSelected.some(c => loc.includes(c))) return true;
+      if (isUSLocation(s.location) && !hasUSA) return false;
+      return foreignSelected.length === 0; // if only USA selected, remove non-US
+    });
+  }
   return suppliers;
 }
 
 // ── Gemini call with model cascade ────────────────────────────────────────
 const GEMINI_MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.1-flash-lite-preview'];
 
-async function callGemini(prompt, geminiKey, scope='', countries='') {
+async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
   for (const model of GEMINI_MODELS) {
     try {
       console.log(`Trying Gemini model: ${model}`);
-      const text = await callGeminiModel(prompt, geminiKey, model, scope, countries);
+      const text = await callGeminiModel(prompt, geminiKey, model, scope, countries, systemInstruction);
       if (text) return text;
     } catch (err) {
       console.warn(`${model} failed: ${err.message}. Trying next model...`);
@@ -138,14 +165,14 @@ async function callGemini(prompt, geminiKey, scope='', countries='') {
   throw new Error('All Gemini models failed');
 }
 
-async function callGeminiModel(prompt, geminiKey, model, scope='', countries='') {
+async function callGeminiModel(prompt, geminiKey, model, scope='', countries='', systemInstruction='') {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        system_instruction: { parts: [{ text: 'You are a sourcing analyst. After searching, you MUST return a JSON array. Never return an empty response.' }] },
+        system_instruction: { parts: [{ text: systemInstruction || 'You are a Lead Sourcing & Procurement Analyst. Return a valid JSON array of suppliers only. No preamble. No markdown.' }] },
         contents: [{ parts: [{ text: prompt }] }],
         tools: [{ googleSearch: {} }],
         generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
@@ -239,69 +266,74 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, imageData, imageType } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, imageData, imageType } = req.body;
     const cleanedCommodity = cleanCommodity(commodity);
 
-    const scopeText = scope === 'domestic' ? 'US domestic suppliers only — do NOT include any international or foreign suppliers'
-      : scope === 'foreign' ? 'international/foreign suppliers only — do NOT include any US or American suppliers'
-      : 'both US domestic and international suppliers';
-    const certText    = certs    ? `Required certifications: ${certs}.`      : '';
-    const countryText = (countries && scope !== 'domestic')
-      ? `Preferred countries: ${countries}. Focus results on these countries.`
-      : (scope === 'foreign' ? 'Exclude all US-based companies. Focus on non-US international manufacturers.' : '');
-    const htsText     = hts      ? `HTS Code: ${hts}.`                       : '';
+    // Build dynamic geography string from selected countries
+    const countryList = selectedCountries && selectedCountries.length ? selectedCountries : [];
+    const hasUSA = countryList.includes('USA');
+    const foreignCountries = countryList.filter(c => c !== 'USA');
+    const allDomestic = hasUSA && foreignCountries.length === 0;
+    const allForeign = foreignCountries.length > 0 && !hasUSA;
+    const mixed = hasUSA && foreignCountries.length > 0;
 
+    const geoSelected = allDomestic ? 'United States'
+      : allForeign ? foreignCountries.join(', ')
+      : mixed ? `United States, ${foreignCountries.join(', ')}`
+      : 'Global (no restriction)';
 
-    // Geography constraint — placed at top and bottom of prompt so Gemini can't miss it
-    const geoConstraint = scope === 'foreign'
-      ? (countries
-          ? `GEOGRAPHY REQUIREMENT: Return ONLY suppliers located in: ${countries}. Do NOT include any US or American companies.`
-          : `GEOGRAPHY REQUIREMENT: Return ONLY non-US international suppliers. Do NOT include any companies based in the United States.`)
-      : scope === 'domestic'
-      ? `GEOGRAPHY REQUIREMENT: Return ONLY US-based suppliers. Do NOT include any international or foreign companies.`
-      : '';
+    const certText = certs ? certs : 'None';
+    const htsText = hts ? hts : 'None';
 
-    // Append country to search query for better results
-    const geoSearchSuffix = scope === 'foreign'
-      ? (countries ? ` ${countries} manufacturer` : ' international manufacturer -USA -"United States"')
-      : scope === 'domestic' ? ' manufacturer USA "United States"' : '';
+    const sourceInstructions = sources && sources.length
+      ? sources.map(s => `"${cleanedCommodity}" site:${s.toLowerCase().replace(/\s/g,'')}.com`).join(', ')
+      : `"${cleanedCommodity}" site:thomasnet.com`;
 
-    const supplierPrompt = [
-      geoConstraint ? `⚠ ${geoConstraint}` : '',
-      `You are an expert sourcing analyst. Search the web right now and find real manufacturers and distributors for this sourcing request.`,
-      `Sourcing request: "${cleanedCommodity}"`,
-      `Scope: ${scopeText}`,
-      certText,
-      countryText,
-      htsText,
-      `Search strategy:`,
-      `- Search Google for: "${cleanedCommodity}" manufacturer supplier${geoSearchSuffix}`,
-      `- Look for company websites, trade show listings, and industry directories`,
-      sources && sources.length
-        ? `- The user has specifically requested results from these sources:\n${sources.map(s => `  * Search ${s} for "${cleanedCommodity}"`).join('\n')}`
-        : '- Search ThomasNet, trade directories, and import/export records',
-      `Extract every real manufacturer, distributor, or supplier you find. Return a JSON array of up to 15 suppliers. For each include:`,
-      `- id (number, starting at 1)`,
-      `- name (exact company name)`,
-      `- location (City, ST for US — e.g. "Houston, TX". City, Country for international — e.g. "Hangzhou, China")`,
-      `- website (root domain only, e.g. "acme.com" — from actual search results)`,
-      `- source (where found: "ThomasNet" / "Web Search" / "Trade Directory" / "Direct" / "Kompass")`,
-      `- specialty (1 sentence describing what they make and their relevant capabilities)`,
-      `- tags (2-4 short capability strings)`,
-      `- certs (array of certifications found, else [])`,
-      `- fit ("high" / "medium" / "low" based on match to the sourcing request)`,
-      `- fitReason (1 sentence explaining the fit score)`,
-      `- contactEmail ("")`,
-      `- contactName ("")`,
-      `Rules:`,
-      `- Only include companies confirmed by your search results`,
-      `- Do not invent or hallucinate company names`,
-      `- Prefer manufacturers over distributors when both are available`,
-      `- When in doubt, include the company — verification is the user's job`,
-      geoConstraint ? `- ${geoConstraint}` : '',
-      `Return ONLY a valid JSON array. No markdown. No explanation. No preamble.`
-    ].filter(Boolean).join('\n\n');
+    const systemInstruction = `You are a Lead Sourcing & Procurement Analyst. You provide raw data in JSON format.
+CRITICAL: You are currently restricted to ${geoSelected} suppliers only. If a company is not headquartered or manufacturing in ${geoSelected}, it is a hard-fail; do not include it.
+No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
+    const supplierPrompt = `[GOAL]
+Perform deep-web research using Google Search to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
+
+[COMMODITY DATA]
+- Commodity: "${cleanedCommodity}"
+- Required Certs: ${certText}
+- HTS Code: ${htsText}
+- Geography Scope: ${geoSelected} ONLY. (Strictly exclude all entities outside ${geoSelected}).
+
+[RESEARCH PROTOCOL]
+1. EXECUTE SEARCH: Use the search tool to query: "${cleanedCommodity} manufacturer ${geoSelected}", "${cleanedCommodity} domestic supplier", and ${sourceInstructions}.
+2. VALIDATE ENTITY: You must identify the SPECIFIC COMPANY NAME. If a search result is a list or directory (e.g. Alibaba, ThomasNet, Kompass), you MUST extract the names of the companies within that list.
+3. VERIFY LOCATION: Confirm the Contact or About page lists a physical address in ${geoSelected}. Discard any results outside ${geoSelected}.
+4. PRIORITIZE: Rank results by Manufacturer first, then Distributor/Master Distributor.
+
+[OUTPUT RULES - ZERO TOLERANCE]
+- RETURN ONLY A JSON ARRAY.
+- NO MARKDOWN: Do not use \`\`\`json or any backticks. Start with [ and end with ].
+- NO PLACEHOLDERS: If you cannot find a specific company name, do not create an entry.
+- NO EXPLANATIONS: Do not explain why a search failed or succeeded. If 0 results are found, return [].
+- TOKEN MANAGEMENT: Once you have identified 15 verified companies, stop searching immediately and generate the JSON output.
+
+[JSON SCHEMA]
+[
+  {
+    "id": 1,
+    "name": "Exact Legal Company Name",
+    "location": "City, ST or City, Country",
+    "website": "domain.com",
+    "source": "ThomasNet / Web Search / Direct",
+    "specialty": "One sentence on specific manufacturing capabilities.",
+    "tags": ["tag1", "tag2"],
+    "certs": [],
+    "fit": "high | medium | low",
+    "fitReason": "Concise reason for fit score.",
+    "contactEmail": "",
+    "contactName": ""
+  }
+]
+
+GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any companies outside ${geoSelected}. Begin JSON output now.`;
 
     let responseText;
     let usedGemini = false;
@@ -310,7 +342,7 @@ app.post('/api/search', async (req, res) => {
     if (geminiKey) {
       try {
         console.log('Calling Gemini with Google Search grounding...');
-        responseText = await callGemini(supplierPrompt, geminiKey, scope, countries);
+        responseText = await callGemini(supplierPrompt, geminiKey, scope, countries, systemInstruction);
         usedGemini = true;
         console.log('Gemini response received');
       } catch (geminiErr) {
@@ -335,7 +367,7 @@ app.post('/api/search', async (req, res) => {
       suppliers = parseJSON(responseText);
       if (Array.isArray(suppliers)) {
         const before = suppliers.length;
-        suppliers = filterByScope(suppliers, scope, countries);
+        suppliers = filterByScope(suppliers, scope, countries, selectedCountries);
         console.log(`Geography filter: ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
         // Re-number IDs after filtering
         suppliers.forEach((s, i) => s.id = i + 1);
