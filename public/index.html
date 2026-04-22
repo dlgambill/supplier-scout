@@ -253,7 +253,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div>
         <div class="section-label">// SOURCING RESULTS</div>
         <div class="results-title" id="resultsTitle"></div>
-        <div id="liveSearchBadge" style="display:none;margin-top:6px;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 8px;width:fit-content;background:rgba(46,204,113,0.07);">&#9679; LIVE SEARCH</div>
+        <div id="liveSearchBadge" style="display:none;margin-top:6px;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 8px;width:fit-content;background:rgba(46,204,113,0.07);">&#9679; GEMINI LIVE SEARCH</div>
       </div>
       <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
         <div class="results-count" id="resultsCount"></div>
@@ -262,7 +262,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div id="degradedBanner" style="display:none;background:rgba(231,76,60,0.07);border:1px solid rgba(231,76,60,0.3);padding:9px 14px;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#e74c3c;line-height:1.7;">
-      &#9888;&nbsp; <strong>Degraded mode</strong> — SERPAPI_KEY not configured. Results are AI-generated from training data and may be inaccurate. Add a SerpAPI key for live search.
+      &#9888;&nbsp; <strong>Degraded mode</strong> — GEMINI_API_KEY not configured. Results are AI-generated from training data and may be less accurate. Add a Gemini API key for live web search.
     </div>
     <div style="background:rgba(232,160,32,0.06);border:1px solid rgba(232,160,32,0.25);padding:9px 14px;margin-bottom:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);line-height:1.7;">
       &#9888;&nbsp; <span style="color:var(--accent);">Always verify suppliers before outreach.</span> Use the "Verify on Google" button on each card to confirm the company is real and makes this product.
@@ -414,7 +414,7 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
-  // Show live search badge if SerpAPI was used
+  // Show live search badge if Gemini was used (usedSerpApi flag reused for Gemini)
   if(data.usedSerpApi){
     document.getElementById('liveSearchBadge').style.display='inline-flex';
     document.getElementById('degradedBanner').style.display='none';
@@ -709,7 +709,7 @@ function renderEmailCards(){
     const mailtoHref='mailto:'+encodeURIComponent(toAddr)+'?subject='+encodeURIComponent(personalizedSubject)+'&body='+encodeURIComponent(personalizedBody);
 
     d.innerHTML=
-      '<div class="email-header" onclick="this.parentElement.classList.toggle(\'open\')">'
+      '<div class="email-header">'
         +'<div>'
           +'<div class="email-to">'+s.name+(toAddr?' &nbsp;<span style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);font-weight:400">'+toAddr+'</span>':'')+'</div>'
           +'<div class="email-subject">'+personalizedSubject+'</div>'
@@ -719,11 +719,17 @@ function renderEmailCards(){
       +'<div class="email-body">'
         +'<div class="email-text">'+safe+'</div>'
         +'<div class="email-actions">'
-          +'<a class="btn-sm primary" href="'+mailtoHref+'" onclick="event.stopPropagation()" style="text-decoration:none;display:inline-block;">&#9993; Open in Email</a>'
-          +'<button class="btn-sm" onclick="copyText(decodeURIComponent(\''+encodeURIComponent(personalizedBody)+'\'))">Copy Body</button>'
-          +'<button class="btn-sm" onclick="copyText(decodeURIComponent(\''+encodeURIComponent(personalizedSubject)+'\'))">Copy Subject</button>'
+          +'<a class="btn-sm primary btn-mailto" href="'+mailtoHref+'" style="text-decoration:none;display:inline-block;">&#9993; Open in Email</a>'
+          +'<button class="btn-sm btn-copy-body">Copy Body</button>'
+          +'<button class="btn-sm btn-copy-subject">Copy Subject</button>'
         +'</div>'
       +'</div>';
+
+    // Use event listeners — avoids inline onclick encoding issues with special chars
+    d.querySelector('.email-header').addEventListener('click', () => d.classList.toggle('open'));
+    d.querySelector('.btn-mailto').addEventListener('click', e => e.stopPropagation());
+    d.querySelector('.btn-copy-body').addEventListener('click', e => { e.stopPropagation(); copyText(personalizedBody); });
+    d.querySelector('.btn-copy-subject').addEventListener('click', e => { e.stopPropagation(); copyText(personalizedSubject); });
     eg.appendChild(d);
   });
 }
