@@ -270,6 +270,16 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
         <label>Your email address <span style="color:var(--text3)">(used to open each outreach email)</span></label>
         <input type="text" id="senderEmail" placeholder="you@yourcompany.com" />
       </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="input-block" style="margin-bottom:0;">
+          <label>Your name</label>
+          <input type="text" id="senderName" placeholder="Jane Smith" />
+        </div>
+        <div class="input-block" style="margin-bottom:0;">
+          <label>Your company</label>
+          <input type="text" id="senderCompany" placeholder="Acme Corp" />
+        </div>
+      </div>
       <div class="input-block">
         <div id="attachToggle" class="toggle-row" onclick="toggleOpt('attach')">
           <div class="toggle-check">&#10003;</div>
@@ -808,8 +818,18 @@ function renderEmailCards(){
     const d=document.createElement('div');
     d.className='email-card';
     // Personalize subject and body with supplier name
-    const personalizedBody=(template.body||'').replace(/\[SUPPLIER_NAME\]/g,s.name);
-    const personalizedSubject=template.subject||'Sourcing Inquiry';
+    const senderName=document.getElementById('senderName').value.trim()||'[Your Name]';
+    const senderCompany=document.getElementById('senderCompany').value.trim()||'[Your Company]';
+    const personalizedBody=(template.body||'')
+      .replace(/\[SUPPLIER_NAME\]/g,s.name)
+      .replace(/\[Your Name\]/g,senderName)
+      .replace(/\[Your Company Name\]/g,senderCompany)
+      .replace(/\[Your Company\]/g,senderCompany)
+      .replace(/\[Company Name\]/g,senderCompany);
+    const personalizedSubject=(template.subject||'Sourcing Inquiry')
+      .replace(/\[Your Company Name\]/g,senderCompany)
+      .replace(/\[Your Company\]/g,senderCompany)
+      .replace(/\[Company Name\]/g,senderCompany);
     const safe=personalizedBody.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
     const toAddr=s.contactEmail||'';
     const mailtoHref='mailto:'+encodeURIComponent(toAddr)+'?subject='+encodeURIComponent(personalizedSubject)+'&body='+encodeURIComponent(personalizedBody);
@@ -913,6 +933,8 @@ function reset(){
   document.getElementById('inputPanel').style.display='block';
   document.getElementById('commodityInput').value='';
   document.getElementById('senderEmail').value='';
+  document.getElementById('senderName').value='';
+  document.getElementById('senderCompany').value='';
   document.getElementById('certInput').value='';
   document.getElementById('countryInput').value='';
   document.getElementById('htsInput').value='';
