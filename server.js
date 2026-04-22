@@ -48,7 +48,7 @@ function parseJSON(text) {
 }
 
 // ── Gemini call with Google Search grounding ───────────────────────────────
-async function callGemini(prompt, geminiKey) {
+async function callGemini(prompt, geminiKey, scope='', countries='') {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiKey}`,
     {
@@ -88,7 +88,10 @@ async function callGemini(prompt, geminiKey) {
     if (sources.length > 0 || searchQueries.length > 0) {
       // Make a follow-up call without search tool to get the JSON response
       console.log('Making follow-up call to format grounding results...');
-      const followUpPrompt = prompt + '\n\nNote: You already searched the web. Now return the JSON array based on what you found.';
+      const geoReminder = scope === 'foreign'
+        ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.` : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
+        : scope === 'domestic' ? `IMPORTANT: Only include US-based suppliers. Exclude ALL international/foreign companies.` : '';
+      const followUpPrompt = prompt + `\n\nNote: You already searched the web. Now return the JSON array based on what you found. ${geoReminder} Return ONLY a valid JSON array.`;
       const followUpRes = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=\${geminiKey}`,
         {
@@ -190,8 +193,8 @@ app.post('/api/search', async (req, res) => {
 
     // Append country to search query for better results
     const geoSearchSuffix = scope === 'foreign'
-      ? (countries ? ` ${countries}` : ' international non-USA')
-      : scope === 'domestic' ? ' USA' : '';
+      ? (countries ? ` ${countries} manufacturer` : ' international manufacturer -USA -"United States"')
+      : scope === 'domestic' ? ' manufacturer USA "United States"' : '';
 
     const supplierPrompt = [
       geoConstraint ? `⚠ ${geoConstraint}` : '',
@@ -237,7 +240,7 @@ app.post('/api/search', async (req, res) => {
     if (geminiKey) {
       try {
         console.log('Calling Gemini with Google Search grounding...');
-        responseText = await callGemini(supplierPrompt, geminiKey);
+        responseText = await callGemini(supplierPrompt, geminiKey, scope, countries);
         usedGemini = true;
         console.log('Gemini response received');
       } catch (geminiErr) {
