@@ -25,6 +25,10 @@ function parseJSON(text) {
   let jsonStr = text.slice(start, end + 1);
   // Remove control characters that break JSON parsing (Gemini sometimes includes these)
   jsonStr = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
+  // Gemini sometimes appends text after the JSON — strip anything after the final bracket
+  jsonStr = jsonStr.trim();
+  const lastBracket = jsonStr.startsWith('[') ? jsonStr.lastIndexOf(']') : jsonStr.lastIndexOf('}');
+  if (lastBracket !== -1) jsonStr = jsonStr.slice(0, lastBracket + 1);
   return JSON.parse(jsonStr);
 }
 
