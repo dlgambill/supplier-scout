@@ -47,6 +47,51 @@ function parseJSON(text) {
   return JSON.parse(jsonStr);
 }
 
+// ── Geography filter — applied after Gemini returns results ──────────────────
+const US_STATES = new Set([
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
+  'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
+  'NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT',
+  'VA','WA','WV','WI','WY','DC',
+  'ALABAMA','ALASKA','ARIZONA','ARKANSAS','CALIFORNIA','COLORADO','CONNECTICUT',
+  'DELAWARE','FLORIDA','GEORGIA','HAWAII','IDAHO','ILLINOIS','INDIANA','IOWA',
+  'KANSAS','KENTUCKY','LOUISIANA','MAINE','MARYLAND','MASSACHUSETTS','MICHIGAN',
+  'MINNESOTA','MISSISSIPPI','MISSOURI','MONTANA','NEBRASKA','NEVADA','NEW HAMPSHIRE',
+  'NEW JERSEY','NEW MEXICO','NEW YORK','NORTH CAROLINA','NORTH DAKOTA','OHIO',
+  'OKLAHOMA','OREGON','PENNSYLVANIA','RHODE ISLAND','SOUTH CAROLINA','SOUTH DAKOTA',
+  'TENNESSEE','TEXAS','UTAH','VERMONT','VIRGINIA','WASHINGTON','WEST VIRGINIA',
+  'WISCONSIN','WYOMING','UNITED STATES','USA','U.S.A','U.S'
+]);
+
+function isUSLocation(location) {
+  if (!location || location === 'N/A' || location === 'Unknown') return false;
+  const upper = location.toUpperCase();
+  // Check if ends with a US state abbreviation: "City, TX"
+  const parts = upper.split(',').map(p => p.trim());
+  const last = parts[parts.length - 1];
+  return US_STATES.has(last);
+}
+
+function filterByScope(suppliers, scope, countries) {
+  if (!Array.isArray(suppliers)) return suppliers;
+  if (scope === 'domestic') {
+    // Keep only US suppliers — if location unknown, keep it (can't confirm it's foreign)
+    return suppliers.filter(s => {
+      const loc = (s.location || '').toUpperCase();
+      if (!loc || loc === 'N/A' || loc === 'UNKNOWN') return true; // keep unknowns
+      return isUSLocation(s.location);
+    });
+  }
+  if (scope === 'foreign') {
+    // Remove US suppliers
+    return suppliers.filter(s => {
+      if (!s.location || s.location === 'N/A' || s.location === 'Unknown') return true;
+      return !isUSLocation(s.location);
+    });
+  }
+  return suppliers; // 'both' — no filtering
+}
+
 // ── Gemini call with Google Search grounding ───────────────────────────────
 async function callGemini(prompt, geminiKey, scope='', countries='') {
   const res = await fetch(
@@ -259,11 +304,28 @@ app.post('/api/search', async (req, res) => {
     if (!responseText) throw new Error('All AI providers failed');
 
     // Wrap in the shape the frontend expects
+    // Parse, filter by geography, then re-serialize
+    let suppliers;
+    try {
+      suppliers = parseJSON(responseText);
+      if (Array.isArray(suppliers)) {
+        const before = suppliers.length;
+        suppliers = filterByScope(suppliers, scope, countries);
+        console.log(`Geography filter: ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
+        // Re-number IDs after filtering
+        suppliers.forEach((s, i) => s.id = i + 1);
+      }
+      responseText = JSON.stringify(suppliers);
+    } catch(e) {
+      console.warn('Could not apply geography filter:', e.message);
+      // Leave responseText as-is
+    }
+
     res.json({
       claudeData: {
         content: [{ type: 'text', text: responseText }]
       },
-      usedSerpApi: usedGemini, // reuse flag to show LIVE SEARCH badge
+      usedSerpApi: usedGemini,
       usedGemini
     });
 
