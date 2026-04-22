@@ -15,7 +15,7 @@ function parseJSON(text) {
   const firstBrace   = text.indexOf('{');
   const firstBracket = text.indexOf('[');
   let start, end;
-  if (firstBrace === -1 && firstBracket === -1) throw new Error('No JSON found in response');
+  if (firstBrace === -1 && firstBracket === -1) throw new Error('No JSON found in response. Raw text: ' + text.substring(0, 300));
   if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
     start = firstBrace;   end = text.lastIndexOf('}');
   } else {
@@ -60,6 +60,7 @@ async function callGemini(prompt, geminiKey) {
     ?.map(p => p.text)
     ?.join('') || '';
   if (!text) throw new Error('Gemini returned empty response');
+  console.log('Gemini raw response (first 500 chars):', text.substring(0, 500));
   return text;
 }
 
