@@ -55,11 +55,17 @@ async function callGemini(prompt, geminiKey) {
     throw new Error(`Gemini API error ${res.status}: ${err}`);
   }
   const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts
+  const candidate = data?.candidates?.[0];
+  const finishReason = candidate?.finishReason || 'unknown';
+  const text = candidate?.content?.parts
     ?.filter(p => p.text)
     ?.map(p => p.text)
     ?.join('') || '';
-  if (!text) throw new Error('Gemini returned empty response');
+  if (!text) {
+    console.error('Gemini empty response. finishReason:', finishReason);
+    console.error('Full Gemini response:', JSON.stringify(data).substring(0, 800));
+    throw new Error(`Gemini returned empty response (finishReason: ${finishReason})`);
+  }
   console.log('Gemini raw response (first 500 chars):', text.substring(0, 500));
   return text;
 }
