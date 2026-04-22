@@ -31,7 +31,7 @@ function parseJSON(text) {
 // ── Gemini call with Google Search grounding ───────────────────────────────
 async function callGemini(prompt, geminiKey) {
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -113,11 +113,13 @@ app.post('/api/search', async (req, res) => {
     const { commodity, scope, certs, countries, hts, sources, imageData, imageType } = req.body;
     const cleanedCommodity = cleanCommodity(commodity);
 
-    const scopeText = scope === 'domestic' ? 'US domestic suppliers only'
-      : scope === 'foreign' ? 'international/foreign suppliers only'
+    const scopeText = scope === 'domestic' ? 'US domestic suppliers only — do NOT include any international or foreign suppliers'
+      : scope === 'foreign' ? 'international/foreign suppliers only — do NOT include any US or American suppliers'
       : 'both US domestic and international suppliers';
     const certText    = certs    ? `Required certifications: ${certs}.`      : '';
-    const countryText = (countries && scope !== 'domestic') ? `Preferred countries: ${countries}.` : '';
+    const countryText = (countries && scope !== 'domestic')
+      ? `Preferred countries: ${countries}. Focus results on these countries.`
+      : (scope === 'foreign' ? 'Exclude all US-based companies. Focus on non-US international manufacturers.' : '');
     const htsText     = hts      ? `HTS Code: ${hts}.`                       : '';
 
     const supplierPrompt = `You are an expert sourcing analyst. Search the web right now and find real manufacturers and distributors for this sourcing request. Use Google Search to find current, verified suppliers.
