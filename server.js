@@ -22,7 +22,10 @@ function parseJSON(text) {
     start = firstBracket; end = text.lastIndexOf(']');
   }
   if (start === -1 || end === -1) throw new Error('Malformed JSON in response');
-  return JSON.parse(text.slice(start, end + 1));
+  let jsonStr = text.slice(start, end + 1);
+  // Remove control characters that break JSON parsing (Gemini sometimes includes these)
+  jsonStr = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
+  return JSON.parse(jsonStr);
 }
 
 // ── Gemini call with Google Search grounding ───────────────────────────────
@@ -34,7 +37,7 @@ async function callGemini(prompt, geminiKey) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ google_search: {} }],
+        tools: [{ googleSearch: {} }],  // Google Search grounding
         generationConfig: {
           temperature: 0.1,   // low temp = more factual, less creative
           maxOutputTokens: 8192
@@ -44,6 +47,7 @@ async function callGemini(prompt, geminiKey) {
   );
   if (!res.ok) {
     const err = await res.text();
+    console.error('Gemini API raw error:', err);
     throw new Error(`Gemini API error ${res.status}: ${err}`);
   }
   const data = await res.json();
@@ -165,7 +169,8 @@ Return ONLY a valid JSON array. No markdown. No explanation. No preamble.`;
         usedGemini = true;
         console.log('Gemini response received');
       } catch (geminiErr) {
-        console.warn('Gemini failed, falling back to Claude:', geminiErr.message);
+        console.error('Gemini failed:', geminiErr.message);
+        console.error('Falling back to Claude. To debug: check GEMINI_API_KEY is valid and google_search tool is enabled for your project.');
         responseText = null;
       }
     }
