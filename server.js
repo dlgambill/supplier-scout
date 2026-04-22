@@ -122,42 +122,57 @@ app.post('/api/search', async (req, res) => {
       : (scope === 'foreign' ? 'Exclude all US-based companies. Focus on non-US international manufacturers.' : '');
     const htsText     = hts      ? `HTS Code: ${hts}.`                       : '';
 
-    const supplierPrompt = `You are an expert sourcing analyst. Search the web right now and find real manufacturers and distributors for this sourcing request. Use Google Search to find current, verified suppliers.
 
-Sourcing request: "${cleanedCommodity}"
-Scope: ${scopeText}
-${certText}
-${countryText}
-${htsText}
+    // Geography constraint — placed at top and bottom of prompt so Gemini can't miss it
+    const geoConstraint = scope === 'foreign'
+      ? (countries
+          ? `GEOGRAPHY REQUIREMENT: Return ONLY suppliers located in: ${countries}. Do NOT include any US or American companies.`
+          : `GEOGRAPHY REQUIREMENT: Return ONLY non-US international suppliers. Do NOT include any companies based in the United States.`)
+      : scope === 'domestic'
+      ? `GEOGRAPHY REQUIREMENT: Return ONLY US-based suppliers. Do NOT include any international or foreign companies.`
+      : '';
 
-Search strategy:
-- Search Google for: "${cleanedCommodity}" manufacturer supplier
-- Look for company websites, trade show listings, and industry directories
-- For international: search by country/region as specified
-${sources && sources.length ? `- The user has specifically requested results from these sources — make sure to search each one:\n${sources.map(s => `  * Search ${s} for "${cleanedCommodity}"`).join('\n')}` : '- Search ThomasNet, trade directories, and import/export records'}
+    // Append country to search query for better results
+    const geoSearchSuffix = scope === 'foreign'
+      ? (countries ? ` ${countries}` : ' international non-USA')
+      : scope === 'domestic' ? ' USA' : '';
 
-Extract every real manufacturer, distributor, or supplier you find. Return a JSON array of up to 15 suppliers. For each include:
-- id (number, starting at 1)
-- name (exact company name)
-- location (City, ST for US — e.g. "Houston, TX". City, Country for international — e.g. "Hangzhou, China")
-- website (root domain only, e.g. "acme.com" — from actual search results)
-- source (where found: "ThomasNet" / "Web Search" / "Trade Directory" / "Direct" / "Kompass")
-- specialty (1 sentence describing what they make and their relevant capabilities)
-- tags (2-4 short capability strings, e.g. ["ISO 9001", "custom fabrication"])
-- certs (array of certifications found, else [])
-- fit ("high" / "medium" / "low" based on match to the sourcing request)
-- fitReason (1 sentence explaining the fit score)
-- contactEmail ("")
-- contactName ("")
+    const supplierPrompt = [
+      geoConstraint ? `⚠ ${geoConstraint}` : '',
+      `You are an expert sourcing analyst. Search the web right now and find real manufacturers and distributors for this sourcing request.`,
+      `Sourcing request: "${cleanedCommodity}"`,
+      `Scope: ${scopeText}`,
+      certText,
+      countryText,
+      htsText,
+      `Search strategy:`,
+      `- Search Google for: "${cleanedCommodity}" manufacturer supplier${geoSearchSuffix}`,
+      `- Look for company websites, trade show listings, and industry directories`,
+      sources && sources.length
+        ? `- The user has specifically requested results from these sources:\n${sources.map(s => `  * Search ${s} for "${cleanedCommodity}"`).join('\n')}`
+        : '- Search ThomasNet, trade directories, and import/export records',
+      `Extract every real manufacturer, distributor, or supplier you find. Return a JSON array of up to 15 suppliers. For each include:`,
+      `- id (number, starting at 1)`,
+      `- name (exact company name)`,
+      `- location (City, ST for US — e.g. "Houston, TX". City, Country for international — e.g. "Hangzhou, China")`,
+      `- website (root domain only, e.g. "acme.com" — from actual search results)`,
+      `- source (where found: "ThomasNet" / "Web Search" / "Trade Directory" / "Direct" / "Kompass")`,
+      `- specialty (1 sentence describing what they make and their relevant capabilities)`,
+      `- tags (2-4 short capability strings)`,
+      `- certs (array of certifications found, else [])`,
+      `- fit ("high" / "medium" / "low" based on match to the sourcing request)`,
+      `- fitReason (1 sentence explaining the fit score)`,
+      `- contactEmail ("")`,
+      `- contactName ("")`,
+      `Rules:`,
+      `- Only include companies confirmed by your search results`,
+      `- Do not invent or hallucinate company names`,
+      `- Prefer manufacturers over distributors when both are available`,
+      `- When in doubt, include the company — verification is the user's job`,
+      geoConstraint ? `- ${geoConstraint}` : '',
+      `Return ONLY a valid JSON array. No markdown. No explanation. No preamble.`
+    ].filter(Boolean).join('\n\n');
 
-Rules:
-- Only include companies confirmed by your search results
-- Do not invent or hallucinate company names
-- Prefer manufacturers over distributors when both are available
-- Include both large and small suppliers if they match
-- When in doubt, include the company — verification is the user's job
-
-Return ONLY a valid JSON array. No markdown. No explanation. No preamble.`;
 
     let responseText;
     let usedGemini = false;
