@@ -6,259 +6,186 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ── SerpAPI search helper ──────────────────────────────────────────────────
-async function serpSearch(query, serpApiKey, num = 10) {
-  const params = new URLSearchParams({
-    q: query,
-    api_key: serpApiKey,
-    num: String(num),
-    hl: 'en',
-    gl: 'us'
-  });
-  const res = await fetch(`https://serpapi.com/search.json?${params}`);
-  if (!res.ok) throw new Error(`SerpAPI error: ${res.status} ${res.statusText}`);
-  const data = await res.json();
-
-  // Extract knowledge graph location if present (free, comes with search)
-  const kg = data.knowledge_graph || {};
-  const kgLocation = [kg.headquarters, kg.address, kg.city]
-    .filter(Boolean).join(', ');
-
-  const genericTlds = new Set(['com','net','org','io','co','gov','edu','info','biz','us']);
-  const results = (data.organic_results || []).map(r => {
-    // Infer country from ccTLD (e.g. .de, .cn, .ca)
-    const tldMatch = (r.link || '').match(/https?:\/\/[^/]+\.([a-z]{2})(?:\/|$)/);
-    const tldCountry = (tldMatch && !genericTlds.has(tldMatch[1])) ? tldMatch[1].toUpperCase() : '';
-    return {
-      title: r.title || '',
-      url: r.link || '',
-      displayed_url: r.displayed_link || '',
-      snippet: r.snippet || '',
-      tld_country: tldCountry,
-      address: r.address || ''
-    };
-  });
-
-  return { results, kgLocation };
-}
-
-// Lightweight location lookup for a specific company name
-async function serpLocationLookup(companyName, serpApiKey) {
-  try {
-    const params = new URLSearchParams({
-      q: `"${companyName}" company headquarters city state`,
-      api_key: serpApiKey,
-      num: '3',
-      hl: 'en',
-      gl: 'us'
-    });
-    const res = await fetch(`https://serpapi.com/search.json?${params}`);
-    if (!res.ok) return '';
-    const data = await res.json();
-    const kg = data.knowledge_graph || {};
-    return [kg.headquarters, kg.address, kg.city].filter(Boolean).join(', ');
-  } catch (e) {
-    return '';
+// ── JSON parser (shared) ───────────────────────────────────────────────────
+function parseJSON(text) {
+  // Strip markdown code fences if present
+  text = text.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3))
+             .replace(/```[\s\S]*?```/g, m => m.slice(3, -3))
+             .trim();
+  const firstBrace   = text.indexOf('{');
+  const firstBracket = text.indexOf('[');
+  let start, end;
+  if (firstBrace === -1 && firstBracket === -1) throw new Error('No JSON found in response');
+  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
+    start = firstBrace;   end = text.lastIndexOf('}');
+  } else {
+    start = firstBracket; end = text.lastIndexOf(']');
   }
+  if (start === -1 || end === -1) throw new Error('Malformed JSON in response');
+  return JSON.parse(text.slice(start, end + 1));
 }
 
-// Strip user constraint language that pollutes search queries
-// e.g. "wholesale only, no retail" should not be in a Google search
-function cleanCommodityForSearch(commodity) {
+// ── Gemini call with Google Search grounding ───────────────────────────────
+async function callGemini(prompt, geminiKey) {
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro:generateContent?key=${geminiKey}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        tools: [{ google_search: {} }],
+        generationConfig: {
+          temperature: 0.1,   // low temp = more factual, less creative
+          maxOutputTokens: 8192
+        }
+      })
+    }
+  );
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Gemini API error ${res.status}: ${err}`);
+  }
+  const data = await res.json();
+  const text = data?.candidates?.[0]?.content?.parts
+    ?.filter(p => p.text)
+    ?.map(p => p.text)
+    ?.join('') || '';
+  if (!text) throw new Error('Gemini returned empty response');
+  return text;
+}
+
+// ── Claude fallback ────────────────────────────────────────────────────────
+async function callClaude(prompt, anthropicKey, expectArray = true) {
+  const system = expectArray
+    ? 'Return only a valid JSON array. No markdown. No preamble.'
+    : 'Return only a valid JSON object. No markdown. No preamble.';
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': anthropicKey,
+      'anthropic-version': '2023-06-01'
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 8000,
+      system,
+      messages: [{ role: 'user', content: prompt }]
+    })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error(data.error.message || 'Claude error');
+  return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+}
+
+// ── Clean constraint language from commodity before searching ──────────────
+function cleanCommodity(commodity) {
   return commodity
-    .replace(/wholesale only/gi, '')
-    .replace(/no retail/gi, '')
-    .replace(/retail only/gi, '')
-    .replace(/domestic only/gi, '')
-    .replace(/usa only/gi, '')
-    .replace(/us only/gi, '')
-    .replace(/only/gi, '')
-    .replace(/,\s*,/g, ',')  // clean up double commas
-    .replace(/\s{2,}/g, ' ') // clean up extra spaces
+    .replace(/wholesale\s*only/gi, '')
+    .replace(/no\s*retail/gi, '')
+    .replace(/retail\s*only/gi, '')
+    .replace(/domestic\s*only/gi, '')
+    .replace(/usa\s*only/gi, '')
+    .replace(/us\s*only/gi, '')
+    .replace(/\bonly\b/gi, '')
+    .replace(/,\s*,/g, ',')
+    .replace(/\s{2,}/g, ' ')
     .trim()
-    .replace(/^,|,$/g, '')   // trim leading/trailing commas
+    .replace(/^,|,$/g, '')
     .trim();
 }
 
-// Build targeted search queries based on scope
-function buildSearchQueries(commodity, scope, countries, hts, certs) {
-  commodity = cleanCommodityForSearch(commodity);
-  const queries = [];
-  const base = commodity.substring(0, 80);
-  // Strip quotes for broader queries
-  const baseLoose = base.replace(/['"]/g, '');
-  const htsPart = hts ? ` HTS ${hts}` : '';
-  const certPart = certs ? ` ${certs}` : '';
-
-  if (scope === 'domestic' || scope === 'both') {
-    queries.push(`"${base}" manufacturer USA${certPart}`);
-    queries.push(`site:thomasnet.com "${baseLoose}"`);
-    queries.push(`${baseLoose} manufacturer supplier United States`);
-    queries.push(`${baseLoose} wholesale distributor USA`);
-  }
-  if (scope === 'foreign' || scope === 'both') {
-    const countryList = countries || 'international';
-    queries.push(`"${base}" manufacturer ${countryList}${certPart}`);
-    queries.push(`${baseLoose} supplier exporter ${countryList}`);
-    queries.push(`${baseLoose} manufacturer importer${htsPart}`);
-  }
-  if (hts) {
-    queries.push(`HTS ${hts} supplier manufacturer`);
-  }
-
-  return queries;
-}
-
-// ── /api/search — SerpAPI → Claude pipeline ───────────────────────────────
+// ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
+  const geminiKey   = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  const serpKey = process.env.SERPAPI_KEY;
 
-  if (!anthropicKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
-
-  // If no SerpAPI key, fall back to pure Claude (degraded mode)
-  const useSerpApi = !!serpKey;
+  if (!geminiKey && !anthropicKey) {
+    return res.status(500).json({ error: 'No API keys configured' });
+  }
 
   try {
-    const { commodity, scope, certs, countries, hts, includeEmails, attachList, imageData, imageType } = req.body;
+    const { commodity, scope, certs, countries, hts, imageData, imageType } = req.body;
+    const cleanedCommodity = cleanCommodity(commodity);
 
-    let searchContext = '';
-
-    if (useSerpApi) {
-      // ── Step 1: Run SerpAPI searches ──────────────────────────────────
-      const queries = buildSearchQueries(commodity, scope, countries, hts, certs);
-      const allResults = [];
-
-      for (const query of queries) {
-        try {
-          const results = await serpSearch(query, serpKey, 10);
-          allResults.push({ query, results });
-        } catch (e) {
-          console.warn(`SerpAPI query failed: "${query}" — ${e.message}`);
-        }
-      }
-
-      // Format results for Claude — include address/TLD hints for location inference
-      searchContext = allResults.map(({ query, results, kgLocation }) => {
-        if (!results.length) return `QUERY: ${query}\nNo results.\n`;
-        const header = kgLocation ? `QUERY: ${query} [Knowledge Graph: ${kgLocation}]` : `QUERY: ${query}`;
-        return header + '\nRESULTS:\n' + results.map((r, i) => {
-          const locHint = r.tld_country ? ` [country TLD: .${r.tld_country.toLowerCase()}]` : '';
-          const addrHint = r.address ? ` [address: ${r.address}]` : '';
-          return `  ${i + 1}. ${r.title}\n     URL: ${r.url}${locHint}${addrHint}\n     ${r.snippet}`;
-        }).join('\n') + '\n';
-      }).join('\n---\n');
-    }
-
-    // ── Step 2: Build Claude prompt ────────────────────────────────────
     const scopeText = scope === 'domestic' ? 'US domestic suppliers only'
       : scope === 'foreign' ? 'international/foreign suppliers only'
       : 'both US domestic and international suppliers';
-    const certText = certs ? `Required certifications: ${certs}.` : '';
-    const countryText = (countries && (scope === 'foreign' || scope === 'both')) ? `Preferred countries: ${countries}.` : '';
-    const htsText = hts ? `HTS Code: ${hts}.` : '';
+    const certText    = certs    ? `Required certifications: ${certs}.`      : '';
+    const countryText = (countries && scope !== 'domestic') ? `Preferred countries: ${countries}.` : '';
+    const htsText     = hts      ? `HTS Code: ${hts}.`                       : '';
 
-    let supplierPrompt;
+    const supplierPrompt = `You are an expert sourcing analyst. Search the web right now and find real manufacturers and distributors for this sourcing request. Use Google Search to find current, verified suppliers.
 
-    if (useSerpApi && searchContext) {
-      supplierPrompt = `You are an expert sourcing analyst. I have run live Google searches and collected the following real search results. Your job is to extract real supplier companies from these results and score their fit.
-
-Sourcing request: "${commodity}"
+Sourcing request: "${cleanedCommodity}"
 Scope: ${scopeText}
 ${certText}
 ${countryText}
 ${htsText}
 
-LIVE SEARCH RESULTS:
-${searchContext}
+Search strategy:
+- Search Google for: "${cleanedCommodity}" manufacturer supplier
+- Search ThomasNet for domestic suppliers
+- Search trade directories and import/export records
+- Look for company websites, trade show listings, and industry directories
+- For international: search by country/region as specified
 
-Instructions:
-- Extract every distinct manufacturer, supplier, or distributor that appears in the search results.
-- Do not invent companies not present in the results.
-- A company's website comes directly from the URL in the search results — use the root domain.
-- For directory listings (ThomasNet, Kompass, Alibaba etc.), extract ALL supplier names mentioned in titles and snippets.
-- Only skip results that are purely: news articles, how-to guides, Reddit/forum posts, or individual consumer retail pages (Amazon product listings). If there is any chance the result is a supplier or manufacturer, include them.
-- When in doubt, include the company — it is better to return a supplier that needs verification than to return zero results.
-- Score fit based on how well their capabilities match the sourcing request.
-- Deduplicate — if the same company appears in multiple results, include them once with the best available data.
-
-Return a JSON array of up to 15 supplier objects, each with:
-- id (number)
-- name (company name from search results)
-- location (city, state or city, country — derive from: snippet text, knowledge graph data, URL country TLD hints, or your training knowledge of the company. For US companies use "City, ST" format. For international use "City, Country". Use your knowledge of well-known companies to fill gaps. Only use "Unknown" as a last resort if you truly have no signal.)
-- website (root domain from search result URL, e.g. "acme.com")
-- source (which query/directory found them: ThomasNet / Direct / Web Search / Kompass / MFG.com)
-- specialty (1 sentence based on their snippet)
-- tags (2-4 capability strings)
-- certs (certifications mentioned in results, else [])
-- fit ("high"/"medium"/"low")
-- fitReason (1 sentence)
+Extract every real manufacturer, distributor, or supplier you find. Return a JSON array of up to 15 suppliers. For each include:
+- id (number, starting at 1)
+- name (exact company name)
+- location (City, ST for US — e.g. "Houston, TX". City, Country for international — e.g. "Hangzhou, China")
+- website (root domain only, e.g. "acme.com" — from actual search results)
+- source (where found: "ThomasNet" / "Web Search" / "Trade Directory" / "Direct" / "Kompass")
+- specialty (1 sentence describing what they make and their relevant capabilities)
+- tags (2-4 short capability strings, e.g. ["ISO 9001", "custom fabrication"])
+- certs (array of certifications found, else [])
+- fit ("high" / "medium" / "low" based on match to the sourcing request)
+- fitReason (1 sentence explaining the fit score)
 - contactEmail ("")
 - contactName ("")
 
-Return ONLY a valid JSON array. No markdown. No preamble.`;
-    } else {
-      // Degraded mode — no SerpAPI, honest Claude-only fallback
-      supplierPrompt = `You are an expert sourcing analyst.
+Rules:
+- Only include companies confirmed by your search results
+- Do not invent or hallucinate company names
+- Prefer manufacturers over distributors when both are available
+- Include both large and small suppliers if they match
+- When in doubt, include the company — verification is the user's job
 
-Sourcing: "${commodity}"
-Scope: ${scopeText}
-${certText}
-${countryText}
-${htsText}
+Return ONLY a valid JSON array. No markdown. No explanation. No preamble.`;
 
-Note: Live search is unavailable. Return only companies you are highly confident exist and manufacture this commodity based on your training data. Prefer large, well-known manufacturers. Return fewer results rather than guessing.
+    let responseText;
+    let usedGemini = false;
 
-Return a JSON array of up to 8 supplier objects, each with:
-- id (number)
-- name
-- location (city, state or city, country)
-- website (domain only if certain, else "")
-- source (ThomasNet / Kompass / MFG.com / Europages / IndustryNet / Direct)
-- specialty (1 sentence)
-- tags (2-4 strings)
-- certs (array or [])
-- fit ("high"/"medium"/"low")
-- fitReason (1 sentence)
-- contactEmail ("")
-- contactName ("")
-
-Return ONLY a valid JSON array. No markdown. No preamble.`;
+    // ── Try Gemini first ───────────────────────────────────────────────
+    if (geminiKey) {
+      try {
+        console.log('Calling Gemini with Google Search grounding...');
+        responseText = await callGemini(supplierPrompt, geminiKey);
+        usedGemini = true;
+        console.log('Gemini response received');
+      } catch (geminiErr) {
+        console.warn('Gemini failed, falling back to Claude:', geminiErr.message);
+        responseText = null;
+      }
     }
 
-    // ── Step 3: Call Claude for supplier extraction/scoring ────────────
-    let messages;
-    if (imageData && imageType) {
-      messages = [{
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: imageType, data: imageData } },
-          { type: 'text', text: supplierPrompt }
-        ]
-      }];
-    } else {
-      messages = [{ role: 'user', content: supplierPrompt }];
+    // ── Fall back to Claude if Gemini failed or not configured ────────
+    if (!responseText && anthropicKey) {
+      console.log('Using Claude fallback...');
+      responseText = await callClaude(supplierPrompt, anthropicKey, true);
     }
 
-    const claudeRes = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01'
+    if (!responseText) throw new Error('All AI providers failed');
+
+    // Wrap in the shape the frontend expects
+    res.json({
+      claudeData: {
+        content: [{ type: 'text', text: responseText }]
       },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 8000,
-        system: 'Return only a valid JSON array. No markdown. No preamble.',
-        messages
-      })
+      usedSerpApi: usedGemini, // reuse flag to show LIVE SEARCH badge
+      usedGemini
     });
-
-    const claudeData = await claudeRes.json();
-    if (claudeData.error) throw new Error(claudeData.error.message || 'Claude API error');
-
-    res.json({ claudeData, usedSerpApi: useSerpApi });
 
   } catch (err) {
     console.error('Search error:', err);
@@ -266,47 +193,66 @@ Return ONLY a valid JSON array. No markdown. No preamble.`;
   }
 });
 
-// ── /api/email — email template generation (Claude only, cheap) ───────────
+// ── /api/email ─────────────────────────────────────────────────────────────
 app.post('/api/email', async (req, res) => {
+  const geminiKey    = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
-  if (!anthropicKey) return res.status(500).json({ error: 'ANTHROPIC_API_KEY not configured' });
+
+  if (!geminiKey && !anthropicKey) {
+    return res.status(500).json({ error: 'No API keys configured' });
+  }
 
   try {
     const { commodity, includeAttach, attachList } = req.body;
-    const attachNote = includeAttach && attachList ? ` Reference that attachments are included: ${attachList}.` : '';
+    const attachNote = includeAttach && attachList
+      ? ` Reference that attachments are included: ${attachList}.` : '';
 
-    const prompt = `Write a single professional supplier outreach email template.
+    const emailPrompt = `Write a professional supplier outreach email template for sourcing: "${commodity}"${attachNote}
 
-Commodity: "${commodity}"${attachNote}
+Return a JSON object with:
+- subject (string — professional email subject line)
+- body (string — 3 short paragraphs with [SUPPLIER_NAME] placeholder where appropriate:
+    1. Introduce yourself and the sourcing need, referencing their specialty
+    2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}
+    3. Polite closing with a call to action
+  Do NOT include a signature block.)
 
-Return a JSON object with: subject (string), body (string with [SUPPLIER_NAME] placeholder, 3 short paragraphs: introduce the sourcing need, request a quote or capabilities discussion${includeAttach && attachList ? ', mention attached documents' : ''}, polite closing). Do NOT include a signature block. Return ONLY a valid JSON object. No markdown.`;
+Return ONLY a valid JSON object. No markdown. No preamble.`;
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 1500,
-        system: 'Return only a valid JSON object. No markdown. No preamble.',
-        messages: [{ role: 'user', content: prompt }]
-      })
+    let responseText;
+
+    // Try Gemini first for email too
+    if (geminiKey) {
+      try {
+        responseText = await callGemini(emailPrompt, geminiKey);
+      } catch (e) {
+        console.warn('Gemini email failed, falling back to Claude:', e.message);
+        responseText = null;
+      }
+    }
+
+    if (!responseText && anthropicKey) {
+      responseText = await callClaude(emailPrompt, anthropicKey, false);
+    }
+
+    if (!responseText) throw new Error('All AI providers failed');
+
+    // Wrap in the shape the frontend expects
+    res.json({
+      content: [{ type: 'text', text: responseText }]
     });
-
-    const data = await response.json();
-    if (data.error) throw new Error(data.error.message || 'Claude API error');
-    res.json(data);
 
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
+// ── Start ──────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  const hasSerpApi = !!process.env.SERPAPI_KEY;
+  const hasGemini    = !!process.env.GEMINI_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   console.log(`SupplierScout running on port ${PORT}`);
-  console.log(`Mode: ${hasSerpApi ? '✓ SerpAPI + Claude (live search)' : '⚠ Claude-only (no SERPAPI_KEY set)'}`);
+  console.log(`Gemini:  ${hasGemini    ? '✓ configured (primary)'      : '✗ not set'}`);
+  console.log(`Claude:  ${hasAnthropic ? '✓ configured (fallback)'     : '✗ not set'}`);
+  if (!hasGemini) console.log('⚠ Add GEMINI_API_KEY to Railway for live search grounding');
 });
