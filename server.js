@@ -160,7 +160,7 @@ async function callGemini(prompt, geminiKey, scope='', countries='') {
     const searchQueries = grounding?.webSearchQueries || [];
     console.warn('Gemini returned no text content. finishReason:', finishReason);
     console.warn('Search queries used:', searchQueries);
-    if (sources.length > 0 || searchQueries.length > 0) {
+    if (true) { // Always attempt follow-up when Gemini returns empty content
       // Make a follow-up call without search tool to get the JSON response
       console.log('Making follow-up call to format grounding results...');
       const geoReminder = scope === 'foreign'
@@ -187,7 +187,7 @@ async function callGemini(prompt, geminiKey, scope='', countries='') {
       }
     }
     console.error('Full Gemini response:', JSON.stringify(data).substring(0, 800));
-    throw new Error(`Gemini returned empty response (finishReason: \${finishReason})`);
+    throw new Error(`Gemini returned empty response (finishReason: ${finishReason})`);
   }
   console.log('Gemini raw response (first 500 chars):', text.substring(0, 500));
   return text;
