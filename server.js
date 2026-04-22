@@ -12,23 +12,38 @@ function parseJSON(text) {
   text = text.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3))
              .replace(/```[\s\S]*?```/g, m => m.slice(3, -3))
              .trim();
-  const firstBrace   = text.indexOf('{');
+  // Remove control characters
+  text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
+
+  // Find the first [ or { to start extraction
   const firstBracket = text.indexOf('[');
-  let start, end;
-  if (firstBrace === -1 && firstBracket === -1) throw new Error('No JSON found in response. Raw text: ' + text.substring(0, 300));
-  if (firstBrace !== -1 && (firstBracket === -1 || firstBrace < firstBracket)) {
-    start = firstBrace;   end = text.lastIndexOf('}');
-  } else {
-    start = firstBracket; end = text.lastIndexOf(']');
+  const firstBrace   = text.indexOf('{');
+  if (firstBracket === -1 && firstBrace === -1)
+    throw new Error('No JSON found in response. Raw text: ' + text.substring(0, 300));
+
+  // Determine if we're extracting an array or object
+  const isArray = firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace);
+  const openChar  = isArray ? '[' : '{';
+  const closeChar = isArray ? ']' : '}';
+  const start = isArray ? firstBracket : firstBrace;
+
+  // Walk forward counting brackets to find the matching close
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  let end = -1;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === openChar)  depth++;
+    if (ch === closeChar) { depth--; if (depth === 0) { end = i; break; } }
   }
-  if (start === -1 || end === -1) throw new Error('Malformed JSON in response');
-  let jsonStr = text.slice(start, end + 1);
-  // Remove control characters that break JSON parsing (Gemini sometimes includes these)
-  jsonStr = jsonStr.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
-  // Gemini sometimes appends text after the JSON — strip anything after the final bracket
-  jsonStr = jsonStr.trim();
-  const lastBracket = jsonStr.startsWith('[') ? jsonStr.lastIndexOf(']') : jsonStr.lastIndexOf('}');
-  if (lastBracket !== -1) jsonStr = jsonStr.slice(0, lastBracket + 1);
+
+  if (end === -1) throw new Error('Malformed JSON: no matching closing bracket');
+  const jsonStr = text.slice(start, end + 1);
   return JSON.parse(jsonStr);
 }
 
