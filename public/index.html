@@ -54,7 +54,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .source-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 .country-check { padding:5px 12px; border:1px solid var(--border2); background:var(--surface); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; transition:all 0.2s; user-select:none; border-radius:2px; }
 .country-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
-.country-check.usa { border-color:var(--blue); color:var(--blue); }
+.country-check.usa { border-color:var(--border2); color:var(--text3); }
 .country-check.usa.selected { border-color:var(--blue); background:rgba(74,158,255,0.1); color:var(--blue); }
 .pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 
@@ -196,7 +196,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     <div class="input-block">
       <label>Source countries <span style="color:var(--text3)">(select all that apply)</span></label>
       <div style="display:flex;gap:6px;margin-bottom:8px;">
-        <div class="source-check selected" onclick="selectAllCountries()" id="allCountriesBtn">&#127760; All Countries</div>
+        <div class="source-check" onclick="selectAllCountries()" id="allCountriesBtn">&#127760; All Countries</div>
         <div class="source-check" onclick="clearAllCountries()">Clear All</div>
       </div>
       <div id="countryCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
