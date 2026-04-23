@@ -562,8 +562,26 @@ Return ONLY valid JSON (no markdown):
     if (!htsCode) throw new Error('Could not determine HTS code');
 
     // ── Step 2: Look up base MFN rate from static USITC table ──────────────────
-    const baseMfnFloat = lookupMFNRate(htsCode);
-    const baseMfnStr = baseMfnFloat !== null ? baseMfnFloat.toFixed(1) + '%' : 'Free';
+    let baseMfnFloat = lookupMFNRate(htsCode);
+
+    // If HTS not in static table, ask AI for just the base MFN rate
+    if (baseMfnFloat === null) {
+      console.log(`HTS ${htsCode} not in static table, asking AI for base MFN rate...`);
+      try {
+        const mfnPrompt = `What is the US MFN (Column 1 General) base duty rate for HTS code ${htsCode}? Return ONLY valid JSON: {"base_mfn_rate": X.X, "description": "brief description"} where base_mfn_rate is a number like 2.0 or 0 for free.`;
+        let mfnText;
+        if (geminiKey) { try { mfnText = await callGeminiJSON(mfnPrompt, geminiKey); } catch(e) { mfnText = null; } }
+        if (!mfnText && anthropicKey) { mfnText = await callClaude(mfnPrompt, anthropicKey, false); }
+        if (mfnText) {
+          const mfnParsed = parseJSON(mfnText);
+          baseMfnFloat = parseFloat(mfnParsed.base_mfn_rate) || 0;
+          if (!htsDescription && mfnParsed.description) htsDescription = mfnParsed.description;
+        }
+      } catch(e) { console.warn('AI MFN fallback failed:', e.message); }
+      if (baseMfnFloat === null) baseMfnFloat = 0;
+    }
+
+    const baseMfnStr = baseMfnFloat.toFixed(1) + '%';
     console.log(`MFN rate for ${htsCode}: ${baseMfnStr}`);
 
     // ── Step 3: Build per-country rates ──────────────────────────────────────
@@ -572,7 +590,7 @@ Return ONLY valid JSON (no markdown):
       const extra = getAdditionalDuties(country, htsCode);
       const extraFloat = parseRateToFloat(extra.additional);
       const totalFloat = baseMfnFloat + extraFloat;
-      const totalStr = totalFloat > 0 ? totalFloat.toFixed(1) + '%' : baseMfnStr;
+      const totalStr = totalFloat.toFixed(1) + '%';
 
       rates[country] = {
         total_rate: totalStr,
