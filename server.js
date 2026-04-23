@@ -8,30 +8,22 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ── JSON parser (shared) ───────────────────────────────────────────────────
 function parseJSON(text) {
-  // Strip markdown code fences if present
   text = text.replace(/```json[\s\S]*?```/g, m => m.slice(7, -3))
              .replace(/```[\s\S]*?```/g, m => m.slice(3, -3))
              .trim();
-  // Remove control characters
   text = text.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, ' ');
 
-  // Find the first [ or { to start extraction
   const firstBracket = text.indexOf('[');
   const firstBrace   = text.indexOf('{');
   if (firstBracket === -1 && firstBrace === -1)
     throw new Error('No JSON found in response. Raw text: ' + text.substring(0, 300));
 
-  // Determine if we're extracting an array or object
   const isArray = firstBracket !== -1 && (firstBrace === -1 || firstBracket < firstBrace);
   const openChar  = isArray ? '[' : '{';
   const closeChar = isArray ? ']' : '}';
   const start = isArray ? firstBracket : firstBrace;
 
-  // Walk forward counting brackets to find the matching close
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  let end = -1;
+  let depth = 0, inString = false, escape = false, end = -1;
   for (let i = start; i < text.length; i++) {
     const ch = text[i];
     if (escape) { escape = false; continue; }
@@ -43,11 +35,35 @@ function parseJSON(text) {
   }
 
   if (end === -1) throw new Error('Malformed JSON: no matching closing bracket');
-  const jsonStr = text.slice(start, end + 1);
-  return JSON.parse(jsonStr);
+  return JSON.parse(text.slice(start, end + 1));
 }
 
-// ── Geography filter — applied after Gemini returns results ──────────────────
+// ── HTS/Tariff daily cache (in-memory — swap getHTSCache/setHTSCache for DB calls) ──
+const _htsCache = new Map();
+
+function todayKey() {
+  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+}
+
+function getHTSCache(cacheKey) {
+  // TODO: replace with DB lookup — SELECT * FROM hts_cache WHERE cache_key=? AND cache_date=TODAY
+  const entry = _htsCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.date !== todayKey()) { _htsCache.delete(cacheKey); return null; }
+  return entry.data;
+}
+
+function setHTSCache(cacheKey, data) {
+  // TODO: replace with DB upsert — INSERT OR REPLACE INTO hts_cache (cache_key, cache_date, data)
+  _htsCache.set(cacheKey, { date: todayKey(), data });
+}
+
+function buildHTSCacheKey(commodity, htsOverride) {
+  const base = (commodity + '|' + (htsOverride || 'auto')).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_|.]/g, '');
+  return 'hts_' + base.substring(0, 120);
+}
+
+// ── Geography filter ──────────────────────────────────────────────────────
 const US_STATES = new Set([
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
   'KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ',
@@ -66,13 +82,11 @@ const US_STATES = new Set([
 function isUSLocation(location) {
   if (!location || location === 'N/A' || location === 'Unknown') return false;
   const upper = location.toUpperCase();
-  // Check if ends with a US state abbreviation: "City, TX"
   const parts = upper.split(',').map(p => p.trim());
   const last = parts[parts.length - 1];
   return US_STATES.has(last);
 }
 
-// Known non-supplier keywords that Gemini sometimes returns as company names
 const JUNK_NAMES = ['vertex ai search', 'google search', 'web search', 'search results',
   'thomasnet search', 'bing search', 'yahoo search', 'duckduckgo', 'no specific company',
   'alibaba search result', 'globalsources search result', 'kompass search result',
@@ -82,13 +96,11 @@ function isJunkSupplier(s) {
   const name = (s.name || '').toLowerCase().trim();
   if (!name) return true;
   if (JUNK_NAMES.some(j => name.includes(j))) return true;
-  // Catch any "X Search Result" pattern
   if (/search result/i.test(name)) return true;
   if (/no (specific|company|name)/i.test(name)) return true;
   return false;
 }
 
-// Known non-US country indicators in location strings
 const FOREIGN_INDICATORS = [
   'china', 'taiwan', 'germany', 'japan', 'korea', 'india', 'uk', 'united kingdom',
   'england', 'france', 'italy', 'spain', 'mexico', 'canada', 'australia', 'brazil',
@@ -115,7 +127,6 @@ const MANUFACTURER_KEYWORDS = ['manufactur', 'fabricat', 'oem ', 'oem,', 'origin
   'extru', 'assembl', 'produces ', 'producer', 'made in', 'custom made', 'custom manufacturer',
   'we make', 'we produce', 'we manufacture', 'in-house', 'contract manufacturer'];
 
-// Known pure retailers/distributors by name fragment
 const KNOWN_NON_MANUFACTURERS = ['mcmaster', 'grainger', 'fastenal', 'woodcraft', 'home depot',
   'amazon', 'lowes', "lowe's", 'ace hardware', 'northern tool', 'harbor freight', 'zoro',
   'global industrial', 'uline', 'staples', 'walmart', 'target', 'webstaurant'];
@@ -132,13 +143,9 @@ function isDistributor(s) {
 function isManufacturer(s) {
   const name = (s.name || '').toLowerCase();
   const text = ((s.specialty || '') + ' ' + (s.tags || []).join(' ')).toLowerCase();
-  // Known retailers are never manufacturers
   if (KNOWN_NON_MANUFACTURERS.some(k => name.includes(k))) return false;
-  // If specialty says "supplier of" or "retailer" — not a manufacturer
   if (/\b(retailer|retail store|supplier of|reseller)\b/.test(text)) return false;
-  // Has manufacturer keywords
   if (MANUFACTURER_KEYWORDS.some(k => text.includes(k))) return true;
-  // No distributor keywords = likely a manufacturer
   return !DISTRIBUTOR_KEYWORDS.some(k => text.includes(k));
 }
 
@@ -150,32 +157,25 @@ function filterBySupplierType(suppliers, supplierType) {
 
 function filterByScope(suppliers, scope, countries, selectedCountries) {
   if (!Array.isArray(suppliers)) return suppliers;
-  // Always remove junk entries
   suppliers = suppliers.filter(s => !isJunkSupplier(s));
 
   if (scope === 'domestic') {
-    // For domestic: only keep suppliers with a confirmed US location OR truly unknown location
-    // If Gemini returned a location but it's not recognizably US, remove it
     return suppliers.filter(s => {
       const loc = (s.location || '').trim();
-      if (!loc || loc === 'N/A' || loc === 'Unknown' || loc === 'N/A, USA') return true; // keep unknowns
-      if (isForeignLocation(loc)) return false; // confirmed foreign — remove
-      if (isUSLocation(loc)) return true; // confirmed US — keep
-      // Location present but unrecognized — check if it contains any US indicators
+      if (!loc || loc === 'N/A' || loc === 'Unknown' || loc === 'N/A, USA') return true;
+      if (isForeignLocation(loc)) return false;
+      if (isUSLocation(loc)) return true;
       const locUp = loc.toUpperCase();
       if (locUp.includes('USA') || locUp.includes('U.S') || locUp.includes('UNITED STATES')) return true;
-      // If we can't confirm it's US, remove it for domestic searches
       return false;
     });
   }
   if (scope === 'foreign') {
-    // Remove confirmed US locations — keep foreign and unknowns
     return suppliers.filter(s => {
       if (!s.location || s.location === 'N/A' || s.location === 'Unknown') return true;
       return !isUSLocation(s.location);
     });
   }
-  // If specific countries were selected (not just domestic/foreign), filter by them
   if (selectedCountries && selectedCountries.length) {
     const hasUSA = selectedCountries.includes('USA');
     const foreignSelected = selectedCountries.filter(c => c !== 'USA').map(c => c.toLowerCase());
@@ -185,14 +185,14 @@ function filterByScope(suppliers, scope, countries, selectedCountries) {
       if (isUSLocation(s.location) && hasUSA) return true;
       if (foreignSelected.length && foreignSelected.some(c => loc.includes(c))) return true;
       if (isUSLocation(s.location) && !hasUSA) return false;
-      return foreignSelected.length === 0; // if only USA selected, remove non-US
+      return foreignSelected.length === 0;
     });
   }
   return suppliers;
 }
 
 // ── Gemini call with model cascade ────────────────────────────────────────
-const GEMINI_MODELS = ['gemini-3.1-flash-lite-preview', 'gemini-2.5-flash-lite', 'gemini-2.5-flash'];
+const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash'];
 
 async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
   for (const model of GEMINI_MODELS) {
@@ -232,7 +232,6 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
 
   if (!text) {
     console.warn(`${model} returned empty content. finishReason: ${finishReason}. Trying follow-up...`);
-    // Make a follow-up call without search tool
     const geoReminder = scope === 'foreign'
       ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.`
                    : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
@@ -255,6 +254,34 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
   }
   console.log(`${model} response received (first 200 chars):`, text.substring(0, 200));
   return text;
+}
+
+// ── Gemini call WITHOUT search tool (for structured JSON tasks like HTS) ──
+async function callGeminiJSON(prompt, geminiKey) {
+  for (const model of GEMINI_MODELS) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: 'You are a US customs and trade compliance expert. Return only valid JSON. No markdown. No preamble.' }] },
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+          })
+        }
+      );
+      if (!res.ok) { const e = await res.text(); throw new Error(`Gemini ${res.status}: ${e.substring(0,200)}`); }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+      if (text) return text;
+      throw new Error('Empty response');
+    } catch (err) {
+      console.warn(`callGeminiJSON ${model} failed: ${err.message}`);
+    }
+  }
+  throw new Error('All Gemini models failed for JSON call');
 }
 
 // ── Claude fallback ────────────────────────────────────────────────────────
@@ -281,22 +308,138 @@ async function callClaude(prompt, anthropicKey, expectArray = true) {
   return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
-// ── Clean constraint language from commodity before searching ──────────────
 function cleanCommodity(commodity) {
   return commodity
-    .replace(/wholesale\s*only/gi, '')
-    .replace(/no\s*retail/gi, '')
-    .replace(/retail\s*only/gi, '')
-    .replace(/domestic\s*only/gi, '')
-    .replace(/usa\s*only/gi, '')
-    .replace(/us\s*only/gi, '')
-    .replace(/\bonly\b/gi, '')
-    .replace(/,\s*,/g, ',')
-    .replace(/\s{2,}/g, ' ')
-    .trim()
-    .replace(/^,|,$/g, '')
-    .trim();
+    .replace(/wholesale\s*only/gi, '').replace(/no\s*retail/gi, '')
+    .replace(/retail\s*only/gi, '').replace(/domestic\s*only/gi, '')
+    .replace(/usa\s*only/gi, '').replace(/us\s*only/gi, '')
+    .replace(/\bonly\b/gi, '').replace(/,\s*,/g, ',')
+    .replace(/\s{2,}/g, ' ').trim().replace(/^,|,$/g, '').trim();
 }
+
+// ── /api/hts-tariff — infer HTS code and look up tariff rates ─────────────
+app.post('/api/hts-tariff', async (req, res) => {
+  const geminiKey    = process.env.GEMINI_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+  if (!geminiKey && !anthropicKey) {
+    return res.status(500).json({ error: 'No API keys configured' });
+  }
+
+  try {
+    const { commodity, htsOverride, countries } = req.body;
+
+    if (!commodity && !htsOverride) {
+      return res.status(400).json({ error: 'commodity or htsOverride required' });
+    }
+
+    // Unique countries list
+    const countryList = [...new Set((countries || []).filter(c => c && c !== 'USA'))];
+
+    // Check daily cache first
+    const ck = buildHTSCacheKey(commodity || '', htsOverride || '');
+    const cached = getHTSCache(ck);
+    if (cached) {
+      console.log('HTS cache hit:', ck);
+      return res.json({ ...cached, cached: true });
+    }
+
+    const htsPrompt = htsOverride
+      ? `The user has provided HTS code: ${htsOverride} for this product: "${commodity}".
+Verify this is a plausible HTS code and return the official description.
+Then look up the current US import duty rates for importing under this HTS code from each of these countries: ${countryList.join(', ') || 'general'}.
+
+Include:
+- Base MFN (Most Favored Nation) rate
+- Any Section 301 tariffs (China)
+- Any IEEPA emergency tariffs (2025)
+- Any Section 232 tariffs
+- Total combined rate
+
+Return ONLY valid JSON (no markdown):
+{
+  "hts_code": "${htsOverride}",
+  "hts_description": "official USITC description",
+  "assumed": false,
+  "rates": {
+    "CountryName": {
+      "total_rate": "XX.X%",
+      "base_mfn": "X.X%",
+      "additional_duties": "XX%",
+      "additional_type": "Section 301 / IEEPA / Section 232 / None",
+      "notes": "brief note on applicable tariff programs"
+    }
+  }
+}`
+      : `You are a US customs classification expert with current knowledge of the USITC Harmonized Tariff Schedule.
+
+Product description: "${commodity}"
+
+Step 1: Determine the most accurate 10-digit HTS code for this product.
+Step 2: Look up the current US import duty rates for this HTS code from each of these countries: ${countryList.join(', ') || 'general'}.
+
+Include:
+- Base MFN rate
+- Section 301 tariffs if applicable (mainly China)
+- IEEPA emergency tariffs (2025) if applicable
+- Section 232 tariffs if applicable (steel/aluminum)
+- Total combined rate
+
+Be accurate and specific. As of 2025:
+- China faces heavy additional duties (Section 301 + IEEPA, often 125-145% additional)
+- India: typically base MFN only unless specific programs apply
+- Taiwan: typically base MFN only
+- Mexico/Canada: often 0% under USMCA for qualifying goods, but check IEEPA 25% tariff
+- Vietnam: base MFN, some Section 301 exposure
+
+Return ONLY valid JSON (no markdown):
+{
+  "hts_code": "NNNN.NN.NNNN",
+  "hts_description": "official USITC description",
+  "assumed": true,
+  "reasoning": "brief explanation of classification",
+  "rates": {
+    "CountryName": {
+      "total_rate": "XX.X%",
+      "base_mfn": "X.X%",
+      "additional_duties": "XX%",
+      "additional_type": "Section 301 / IEEPA / Section 232 / None",
+      "notes": "brief note"
+    }
+  }
+}`;
+
+    let responseText;
+
+    // Try Gemini first (no search tool needed — uses training knowledge for tariffs)
+    if (geminiKey) {
+      try {
+        responseText = await callGeminiJSON(htsPrompt, geminiKey);
+      } catch (e) {
+        console.warn('Gemini HTS lookup failed, trying Claude:', e.message);
+        responseText = null;
+      }
+    }
+
+    // Fall back to Claude
+    if (!responseText && anthropicKey) {
+      responseText = await callClaude(htsPrompt, anthropicKey, false);
+    }
+
+    if (!responseText) throw new Error('All AI providers failed for HTS lookup');
+
+    const parsed = parseJSON(responseText);
+
+    // Cache and return
+    setHTSCache(ck, parsed);
+    console.log(`HTS lookup complete: ${parsed.hts_code} (${parsed.assumed ? 'inferred' : 'confirmed'})`);
+    res.json({ ...parsed, cached: false });
+
+  } catch (err) {
+    console.error('HTS tariff error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
@@ -311,7 +454,6 @@ app.post('/api/search', async (req, res) => {
     const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType } = req.body;
     const cleanedCommodity = cleanCommodity(commodity);
 
-    // Build dynamic geography string from selected countries
     const countryList = selectedCountries && selectedCountries.length ? selectedCountries : [];
     const hasUSA = countryList.includes('USA');
     const foreignCountries = countryList.filter(c => c !== 'USA');
@@ -385,7 +527,6 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
     let responseText;
     let usedGemini = false;
 
-    // ── Try Gemini first ───────────────────────────────────────────────
     if (geminiKey) {
       try {
         console.log('Calling Gemini with Google Search grounding...');
@@ -394,12 +535,10 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
         console.log('Gemini response received');
       } catch (geminiErr) {
         console.error('Gemini failed:', geminiErr.message);
-        console.error('Falling back to Claude. To debug: check GEMINI_API_KEY is valid and google_search tool is enabled for your project.');
         responseText = null;
       }
     }
 
-    // ── Fall back to Claude if Gemini failed or not configured ────────
     if (!responseText && anthropicKey) {
       console.log('Using Claude fallback...');
       responseText = await callClaude(supplierPrompt, anthropicKey, true);
@@ -407,8 +546,6 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
 
     if (!responseText) throw new Error('All AI providers failed');
 
-    // Wrap in the shape the frontend expects
-    // Parse, filter by geography, then re-serialize
     let suppliers;
     try {
       suppliers = parseJSON(responseText);
@@ -420,13 +557,11 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
           console.log(`Supplier type filter (${supplierType}): ${suppliers.length} remaining`);
         }
         console.log(`Geography filter: ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
-        // Re-number IDs after filtering
         suppliers.forEach((s, i) => s.id = i + 1);
       }
       responseText = JSON.stringify(suppliers);
     } catch(e) {
       console.warn('Could not apply geography filter:', e.message);
-      // Leave responseText as-is
     }
 
     res.json({
@@ -477,7 +612,6 @@ Return ONLY a valid JSON object. No markdown. No preamble.`;
 
     let responseText;
 
-    // Try Gemini first for email too
     if (geminiKey) {
       try {
         responseText = await callGemini(emailPrompt, geminiKey);
@@ -493,7 +627,6 @@ Return ONLY a valid JSON object. No markdown. No preamble.`;
 
     if (!responseText) throw new Error('All AI providers failed');
 
-    // Wrap in the shape the frontend expects
     res.json({
       content: [{ type: 'text', text: responseText }]
     });
@@ -508,7 +641,7 @@ app.listen(PORT, () => {
   const hasGemini    = !!process.env.GEMINI_API_KEY;
   const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   console.log(`SupplierScout running on port ${PORT}`);
-  console.log(`Gemini:  ${hasGemini    ? '✓ configured (primary)'      : '✗ not set'}`);
-  console.log(`Claude:  ${hasAnthropic ? '✓ configured (fallback)'     : '✗ not set'}`);
+  console.log(`Gemini:  ${hasGemini    ? '✓ configured (primary)'  : '✗ not set'}`);
+  console.log(`Claude:  ${hasAnthropic ? '✓ configured (fallback)' : '✗ not set'}`);
   if (!hasGemini) console.log('⚠ Add GEMINI_API_KEY to Railway for live search grounding');
 });
