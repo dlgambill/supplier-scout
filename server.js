@@ -337,7 +337,130 @@ function cleanCommodity(commodity) {
     .replace(/\s{2,}/g, ' ').trim().replace(/^,|,$/g, '').trim();
 }
 
-// ── /api/hts-tariff — infer HTS code and look up tariff rates ─────────────
+// ── USITC HTS API helpers ────────────────────────────────────────────────────
+
+// Country ISO codes for USITC API
+const COUNTRY_ISO = {
+  'china': 'CN', 'taiwan': 'TW', 'india': 'IN', 'mexico': 'MX', 'canada': 'CA',
+  'germany': 'DE', 'japan': 'JP', 'south korea': 'KR', 'korea': 'KR',
+  'united kingdom': 'GB', 'uk': 'GB', 'vietnam': 'VN', 'italy': 'IT',
+  'france': 'FR', 'ireland': 'IE', 'switzerland': 'CH', 'netherlands': 'NL',
+  'malaysia': 'MY', 'thailand': 'TH', 'brazil': 'BR', 'belgium': 'BE',
+  'singapore': 'SG', 'australia': 'AU', 'indonesia': 'ID', 'israel': 'IL',
+  'spain': 'ES', 'austria': 'AT', 'cambodia': 'KH', 'poland': 'PL',
+  'czech republic': 'CZ', 'sweden': 'SE', 'denmark': 'DK', 'finland': 'FI',
+  'norway': 'NO', 'hungary': 'HU', 'romania': 'RO', 'turkey': 'TR',
+  'ukraine': 'UA', 'russia': 'RU', 'hong kong': 'HK', 'uae': 'AE',
+  'bangladesh': 'BD', 'pakistan': 'PK', 'sri lanka': 'LK', 'ethiopia': 'ET'
+};
+
+function getISO(countryName) {
+  return COUNTRY_ISO[(countryName || '').toLowerCase().trim()] || null;
+}
+
+// Fetch the base MFN rate from USITC for a given 10-digit HTS code
+async function fetchUSITCRate(htsCode) {
+  // Normalize: remove dots/spaces, pad to 10 digits
+  const normalized = htsCode.replace(/[\.\s-]/g, '').padEnd(10, '0');
+  const url = `https://hts.usitc.gov/reststop/api/details/htsno/${encodeURIComponent(normalized)}`;
+  try {
+    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+    if (!res.ok) {
+      console.warn(`USITC API returned ${res.status} for ${normalized}`);
+      return null;
+    }
+    const data = await res.json();
+    // USITC returns array of objects; find the General rate of duty
+    const entry = Array.isArray(data) ? data[0] : data;
+    if (!entry) return null;
+    return {
+      hts_code: entry.htsno || normalized,
+      description: entry.description || entry.brief_description || '',
+      general_rate: entry.general || entry.generalRateOfDuty || entry.col1General || null,
+      units: entry.units || ''
+    };
+  } catch (e) {
+    console.warn('USITC fetch failed:', e.message);
+    return null;
+  }
+}
+
+// Additional tariff programs by country (Section 301, IEEPA, Section 232)
+// These are layered ON TOP of the MFN base rate
+// Updated April 2025 — always verify with CBP/customs broker
+function getAdditionalDuties(countryName, htsCode) {
+  const c = (countryName || '').toLowerCase();
+  const hts = (htsCode || '').replace(/\./g, '');
+
+  // China — Section 301 + IEEPA
+  if (c === 'china' || c === 'cn') {
+    // IEEPA executive order tariffs (April 2025): 125% on Chinese goods
+    // Section 301 varies by list: 7.5% (List 1-2), 25% (List 3-4), already included in IEEPA pause
+    // As of May 2025 90-day pause: effective additional = 30% (10% base IEEPA + 20% fentanyl)
+    // Use 145% as worst-case / pre-pause for estimates; flag for verification
+    return { additional: '145.0%', type: 'Section 301 + IEEPA', note: 'Rates subject to active trade negotiations. Verify current status — ranged 30-145% in 2025.' };
+  }
+
+  // Canada — IEEPA 25% on non-USMCA goods; 0% on USMCA-qualifying
+  if (c === 'canada' || c === 'ca') {
+    return { additional: '25.0%', type: 'IEEPA (non-USMCA)', note: 'USMCA-qualifying goods: 0% additional. Non-qualifying: 25% IEEPA tariff.' };
+  }
+
+  // Mexico — IEEPA 25% on non-USMCA goods
+  if (c === 'mexico' || c === 'mx') {
+    return { additional: '25.0%', type: 'IEEPA (non-USMCA)', note: 'USMCA-qualifying goods: 0% additional. Non-qualifying: 25% IEEPA tariff.' };
+  }
+
+  // India — IEEPA 26% reciprocal tariff (paused 90 days from April 2025, 10% floor in effect)
+  if (c === 'india' || c === 'in') {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // Vietnam — IEEPA 46% paused to 10%
+  if (c === 'vietnam' || c === 'vn') {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // EU countries — IEEPA 20% paused to 10%
+  const eu = ['germany','de','france','fr','italy','it','spain','es','netherlands','nl',
+    'belgium','be','austria','at','ireland','ie','poland','pl','sweden','se',
+    'denmark','dk','finland','fi','czech republic','cz','hungary','hu','romania','ro'];
+  if (eu.includes(c)) {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'EU reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // Taiwan — IEEPA 32% paused to 10%
+  if (c === 'taiwan' || c === 'tw') {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // Japan — IEEPA 24% paused to 10%
+  if (c === 'japan' || c === 'jp') {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // South Korea — IEEPA 25% paused to 10%
+  if (c === 'south korea' || c === 'korea' || c === 'kr') {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // Malaysia, Thailand, Indonesia, Cambodia — IEEPA varying, paused to 10%
+  const sea = ['malaysia','my','thailand','th','indonesia','id','cambodia','kh','singapore','sg'];
+  if (sea.includes(c)) {
+    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
+  }
+
+  // Default — 10% universal baseline IEEPA
+  return { additional: '10.0%', type: 'IEEPA baseline', note: 'Universal 10% baseline tariff applies. Verify if higher rate is paused.' };
+}
+
+function parseRateToFloat(rateStr) {
+  if (!rateStr) return 0;
+  const match = String(rateStr).match(/([\d.]+)%/);
+  return match ? parseFloat(match[1]) : 0;
+}
+
+// ── /api/hts-tariff — real USITC rates + structured additional duties ─────────
 app.post('/api/hts-tariff', async (req, res) => {
   const geminiKey    = process.env.GEMINI_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
@@ -348,15 +471,11 @@ app.post('/api/hts-tariff', async (req, res) => {
 
   try {
     const { commodity, htsOverride, countries } = req.body;
-
     if (!commodity && !htsOverride) {
       return res.status(400).json({ error: 'commodity or htsOverride required' });
     }
 
-    // Unique countries list
-    const countryList = [...new Set((countries || []).filter(c => c && c !== 'USA'))];
-
-    // Check daily cache first
+    const countryList = [...new Set((countries || []).filter(c => c && c !== 'USA' && c !== 'United States'))];
     const ck = buildHTSCacheKey(commodity || '', htsOverride || '');
     const cached = getHTSCache(ck);
     if (cached) {
@@ -364,120 +483,85 @@ app.post('/api/hts-tariff', async (req, res) => {
       return res.json({ ...cached, cached: true });
     }
 
-    const htsPrompt = htsOverride
-      ? `Search for the current official US import duty rates for HTS code ${htsOverride}.
+    // ── Step 1: Get HTS code — use override or infer via AI ──────────────────
+    let htsCode = htsOverride || null;
+    let htsDescription = '';
+    let assumed = !htsCode;
+    let reasoning = '';
 
-Product: "${commodity || 'not specified'}"
-HTS Code: ${htsOverride}
-Countries to look up: ${countryList.join(', ') || 'general'}
-Today's date: ${new Date().toISOString().split('T')[0]}
+    if (!htsCode) {
+      // Ask AI to classify the product
+      const classifyPrompt = `Classify this product under the US Harmonized Tariff Schedule (HTS).
+Product: "${commodity}"
+Return ONLY valid JSON (no markdown):
+{"hts_code":"NNNN.NN.NNNN","description":"official brief description","reasoning":"one sentence"}`;
 
-Use Google Search to find the current rates from:
-- USITC HTS database (hts.usitc.gov)
-- CBP (cbp.gov)
-- Recent trade news for any IEEPA/Section 301 updates
-
-For each country provide:
-- base_mfn: the base MFN general rate (from Column 1 General of HTS schedule)
-- additional_duties: any additional tariffs stacked on top (Section 301, IEEPA, Section 232, etc.)
-- additional_type: name of the additional tariff program
-- total_rate: sum of all applicable rates
-- notes: key context (e.g. which Section 301 list, IEEPA status)
-
-Important accuracy notes as of 2025:
-- China: base MFN + Section 301 list duties (7.5-25%) + IEEPA tariffs (currently very high, 125%+)
-- Mexico/Canada: USMCA qualifying goods often 0%, but non-qualifying goods face IEEPA 25% tariff
-- Vietnam: base MFN, may have some Section 301 if in supply chain
-- All others: typically base MFN only unless specific programs apply
-
-Return ONLY valid JSON (no markdown, no preamble):
-{
-  "hts_code": "${htsOverride}",
-  "hts_description": "official USITC description for this code",
-  "assumed": false,
-  "rates": {
-    "CountryName": {
-      "total_rate": "XX.X%",
-      "base_mfn": "X.X%",
-      "additional_duties": "XX%",
-      "additional_type": "Section 301 List 3 / IEEPA / Section 232 / None",
-      "notes": "brief accurate note"
-    }
-  }
-}`
-      : `Search for the correct HTS classification and current US import duty rates for this product.
-
-Product description: "${commodity}"
-Countries to look up: ${countryList.join(', ') || 'general'}
-Today's date: ${new Date().toISOString().split('T')[0]}
-
-Step 1: Search hts.usitc.gov or CBP resources to find the most accurate 10-digit HTS code for this product.
-Step 2: Look up the current duty rates for each country listed.
-
-For each country provide:
-- base_mfn: the base MFN general rate from HTS Column 1 General
-- additional_duties: stacked tariffs (Section 301, IEEPA, Section 232, etc.)
-- additional_type: name of the additional tariff program
-- total_rate: sum of all applicable rates
-- notes: key context
-
-Important accuracy notes as of 2025:
-- China: base MFN + Section 301 list duties (7.5-25%) + IEEPA tariffs (currently 125%+, making total often 145%+)
-- Mexico/Canada: USMCA qualifying goods 0%, non-qualifying face IEEPA 25%
-- India: base MFN + recent IEEPA tariffs (check current status)
-- Vietnam: base MFN, possible Section 301 exposure
-- Taiwan: base MFN only typically
-- All others: typically base MFN unless specific programs apply
-
-Return ONLY valid JSON (no markdown, no preamble):
-{
-  "hts_code": "NNNN.NN.NNNN",
-  "hts_description": "official USITC description",
-  "assumed": true,
-  "reasoning": "brief classification reasoning",
-  "rates": {
-    "CountryName": {
-      "total_rate": "XX.X%",
-      "base_mfn": "X.X%",
-      "additional_duties": "XX%",
-      "additional_type": "Section 301 List X / IEEPA / Section 232 / None",
-      "notes": "brief accurate note"
-    }
-  }
-}`;
-
-    let responseText;
-
-    // Try Gemini first (no search tool needed — uses training knowledge for tariffs)
-    if (geminiKey) {
-      try {
-        responseText = await callGeminiJSON(htsPrompt, geminiKey);
-      } catch (e) {
-        console.warn('Gemini HTS lookup failed, trying Claude:', e.message);
-        responseText = null;
+      let classifyText;
+      if (geminiKey) {
+        try { classifyText = await callGeminiJSON(classifyPrompt, geminiKey); } catch(e) { classifyText = null; }
+      }
+      if (!classifyText && anthropicKey) {
+        classifyText = await callClaude(classifyPrompt, anthropicKey, false);
+      }
+      if (classifyText) {
+        const parsed = parseJSON(classifyText);
+        htsCode = parsed.hts_code || '';
+        htsDescription = parsed.description || '';
+        reasoning = parsed.reasoning || '';
       }
     }
 
-    // Fall back to Claude
-    if (!responseText && anthropicKey) {
-      responseText = await callClaude(htsPrompt, anthropicKey, false);
+    if (!htsCode) throw new Error('Could not determine HTS code');
+
+    // ── Step 2: Fetch real base MFN rate from USITC ───────────────────────────
+    console.log(`Fetching USITC rate for HTS: ${htsCode}`);
+    const usitcData = await fetchUSITCRate(htsCode);
+
+    if (usitcData) {
+      if (!htsDescription) htsDescription = usitcData.description;
+      console.log(`USITC base rate: ${usitcData.general_rate} for ${htsCode}`);
+    } else {
+      console.warn(`USITC lookup failed for ${htsCode}, will estimate base rate`);
     }
 
-    if (!responseText) throw new Error('All AI providers failed for HTS lookup');
+    const baseMfnStr = usitcData?.general_rate || 'See USITC';
+    const baseMfnFloat = parseRateToFloat(baseMfnStr);
 
-    const parsed = parseJSON(responseText);
+    // ── Step 3: Build per-country rates ──────────────────────────────────────
+    const rates = {};
+    for (const country of countryList) {
+      const extra = getAdditionalDuties(country, htsCode);
+      const extraFloat = parseRateToFloat(extra.additional);
+      const totalFloat = baseMfnFloat + extraFloat;
+      const totalStr = totalFloat > 0 ? totalFloat.toFixed(1) + '%' : baseMfnStr;
 
-    // Cache and return
-    setHTSCache(ck, parsed);
-    console.log(`HTS lookup complete: ${parsed.hts_code} (${parsed.assumed ? 'inferred' : 'confirmed'})`);
-    res.json({ ...parsed, cached: false });
+      rates[country] = {
+        total_rate: totalStr,
+        base_mfn: baseMfnStr,
+        additional_duties: extra.additional,
+        additional_type: extra.type,
+        notes: extra.note
+      };
+    }
+
+    const result = {
+      hts_code: htsCode,
+      hts_description: htsDescription,
+      assumed,
+      reasoning,
+      source: usitcData ? 'USITC HTS Database' : 'AI estimate',
+      rates
+    };
+
+    setHTSCache(ck, result);
+    console.log(`HTS tariff complete: ${htsCode} (${assumed ? 'inferred' : 'confirmed'}) via ${result.source}`);
+    res.json({ ...result, cached: false });
 
   } catch (err) {
     console.error('HTS tariff error:', err);
     res.status(500).json({ error: err.message });
   }
 });
-
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
   const geminiKey   = process.env.GEMINI_API_KEY;
