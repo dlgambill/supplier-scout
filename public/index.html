@@ -168,7 +168,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.0.0</div>
   </header>
 
   <div id="inputPanel">
@@ -655,8 +655,8 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
 }
 
 async function searchMoreSources(){
-  // Continue searching same commodity, same scope, for more suppliers
-  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries, currentHts, false);
+  const scope=getScopeFromCountries(currentCountries);
+  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false);
 }
 
 // Refine modal
@@ -679,7 +679,8 @@ async function runRefinedSearch(){
   closeRefineModal();
   suppliers=[]; emails=[];
   document.getElementById('resultsPanel').classList.remove('active');
-  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries, currentHts, true);
+  const scope=getScopeFromCountries(currentCountries);
+  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, true);
 }
 
 function setFitFilter(val,el){
