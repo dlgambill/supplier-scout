@@ -462,12 +462,13 @@ app.post('/api/email', async (req, res) => {
 Use these exact placeholders — do not substitute them with example text:
 - [SUPPLIER_NAME] — the supplier company name
 - [Your Name] — the sender's name
+- [Your Title] — the sender's job title
 - [Your Company] — the sender's company (use this exact string, not "[Your Company Name]")
 
 Return a JSON object with:
 - subject (string — professional subject line, may include [Your Company])
 - body (string — 3 short paragraphs:
-    1. Introduce [Your Name] from [Your Company] and the sourcing need, referencing [SUPPLIER_NAME] specialty
+    1. Introduce [Your Name], [Your Title] from [Your Company] and the sourcing need, referencing [SUPPLIER_NAME] specialty
     2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}
     3. Polite closing with a call to action
   Do NOT include a signature block.)
