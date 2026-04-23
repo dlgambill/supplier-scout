@@ -622,15 +622,15 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
   return parseClaudeJSON(data.claudeData);
 }
 
-// Fetch HTS + tariff data for the current search
+// Fetch HTS + tariff data — countries should already be foreign-only
 async function fetchTariffData(commodity, htsOverride, countries) {
-  const foreignCountries = (countries||[]).filter(c => c !== 'USA');
-  if (!foreignCountries.length) return null; // No tariff data needed for domestic-only
+  const countryList = [...new Set((countries||[]).filter(c => c && c !== 'USA' && c !== 'United States'))];
+  if (!countryList.length) return null;
 
   const res = await fetch('/api/hts-tariff', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ commodity, htsOverride: htsOverride||'', countries: foreignCountries })
+    body: JSON.stringify({ commodity, htsOverride: htsOverride||'', countries: countryList })
   });
   const data = await res.json();
   if (data.error) throw new Error('Tariff lookup: ' + data.error);
@@ -692,17 +692,19 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   },950);
 
   try{
-    // Run supplier search and tariff lookup in parallel
-    const foreignCountries = currentCountries.filter(c => c !== 'USA');
-    const [newSuppliers, tariffResult] = await Promise.all([
-      callSearch(commodity, searchScope, certs, countries, hts,
-        (pastedImageData&&isFirst)?pastedImageData:null,
-        (pastedImageType&&isFirst)?pastedImageType:null),
-      foreignCountries.length ? fetchTariffData(commodity, hts, currentCountries).catch(e => {
-        console.warn('Tariff lookup failed (non-fatal):', e.message);
-        return null;
-      }) : Promise.resolve(null)
-    ]);
+    // Step 1: supplier search
+    const newSuppliers = await callSearch(commodity, searchScope, certs, countries, hts,
+      (pastedImageData&&isFirst)?pastedImageData:null,
+      (pastedImageType&&isFirst)?pastedImageType:null);
+
+    // Step 2: infer countries from results if none explicitly selected, then fetch tariffs
+    const explicitForeign = currentCountries.filter(c => c !== 'USA');
+    const inferredForeign = explicitForeign.length ? explicitForeign : [
+      ...new Set(newSuppliers.map(s => extractCountryFromLocation(s.location)).filter(c => c && c !== 'USA' && c !== 'United States'))
+    ];
+    const tariffResult = inferredForeign.length
+      ? await fetchTariffData(commodity, hts, inferredForeign).catch(e => { console.warn('Tariff lookup failed:', e.message); return null; })
+      : null;
 
     currentTariffData = tariffResult;
 
