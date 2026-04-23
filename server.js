@@ -606,7 +606,7 @@ Return ONLY valid JSON (no markdown):
       hts_description: htsDescription,
       assumed,
       reasoning,
-      source: usitcData ? 'USITC HTS Database' : 'AI estimate',
+      source: 'USITC HTS Schedule',
       rates
     };
 
