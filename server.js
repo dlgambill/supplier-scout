@@ -425,6 +425,9 @@ const MFN_RATES_6 = {
 
 function lookupMFNRate(htsCode) {
   const clean = htsCode.replace(/[.\s-]/g, '');
+  if (clean.length < 8) {
+    console.warn(`HTS code "${htsCode}" has fewer than 8 digits — accuracy may be reduced. Use full 10-digit code for best results.`);
+  }
   const sub8 = parseInt(clean.substring(0, 8));
   if (!isNaN(sub8) && MFN_RATES_8[sub8] !== undefined) return MFN_RATES_8[sub8];
   const sub6 = parseInt(clean.substring(0, 6));
