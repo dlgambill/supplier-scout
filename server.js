@@ -107,21 +107,39 @@ function isForeignLocation(location) {
 }
 
 const DISTRIBUTOR_KEYWORDS = ['distributor', 'distribution', 'wholesale', 'wholesaler', 'reseller',
-  'trader', 'trading company', 'import', 'exporter', 'stockist', 'supplier only', 'master dist'];
-const MANUFACTURER_KEYWORDS = ['manufactur', 'fabricat', 'oem', 'production', 'machining', 'casting',
-  'forging', 'stamping', 'molding', 'extru', 'assembl', 'maker', 'producer'];
+  'trader', 'trading company', 'stockist', 'master distributor', 'supplier of', 'supplies ',
+  'retailer', 'retail', 'e-commerce', 'online store', 'marketplace', 'catalog', 'catalogue',
+  'offers a wide range', 'wide range of', 'offering various', 'sells ', 'carries ', 'stocks '];
+const MANUFACTURER_KEYWORDS = ['manufactur', 'fabricat', 'oem ', 'oem,', 'original equipment',
+  'production', 'machining', 'casting', 'forging', 'stamping', 'molding', 'moulding',
+  'extru', 'assembl', 'produces ', 'producer', 'made in', 'custom made', 'custom manufacturer',
+  'we make', 'we produce', 'we manufacture', 'in-house', 'contract manufacturer'];
+
+// Known pure retailers/distributors by name fragment
+const KNOWN_NON_MANUFACTURERS = ['mcmaster', 'grainger', 'fastenal', 'woodcraft', 'home depot',
+  'amazon', 'lowes', "lowe's", 'ace hardware', 'northern tool', 'harbor freight', 'zoro',
+  'global industrial', 'uline', 'staples', 'walmart', 'target', 'webstaurant'];
 
 function isDistributor(s) {
+  const name = (s.name || '').toLowerCase();
   const text = ((s.specialty || '') + ' ' + (s.tags || []).join(' ')).toLowerCase();
+  if (KNOWN_NON_MANUFACTURERS.some(k => name.includes(k))) return true;
   const hasDist = DISTRIBUTOR_KEYWORDS.some(k => text.includes(k));
   const hasMfg = MANUFACTURER_KEYWORDS.some(k => text.includes(k));
   return hasDist && !hasMfg;
 }
 
 function isManufacturer(s) {
-  const text = ((s.specialty || '') + ' ' + (s.tags || []).join(' ') + ' ' + (s.source || '')).toLowerCase();
-  return MANUFACTURER_KEYWORDS.some(k => text.includes(k)) ||
-    (!DISTRIBUTOR_KEYWORDS.some(k => text.includes(k))); // if not clearly a distributor, assume manufacturer
+  const name = (s.name || '').toLowerCase();
+  const text = ((s.specialty || '') + ' ' + (s.tags || []).join(' ')).toLowerCase();
+  // Known retailers are never manufacturers
+  if (KNOWN_NON_MANUFACTURERS.some(k => name.includes(k))) return false;
+  // If specialty says "supplier of" or "retailer" — not a manufacturer
+  if (/\b(retailer|retail store|supplier of|reseller)\b/.test(text)) return false;
+  // Has manufacturer keywords
+  if (MANUFACTURER_KEYWORDS.some(k => text.includes(k))) return true;
+  // No distributor keywords = likely a manufacturer
+  return !DISTRIBUTOR_KEYWORDS.some(k => text.includes(k));
 }
 
 function filterBySupplierType(suppliers, supplierType) {
