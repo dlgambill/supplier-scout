@@ -699,8 +699,9 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
 
     // Step 2: infer countries from results if none explicitly selected, then fetch tariffs
     const explicitForeign = currentCountries.filter(c => c !== 'USA');
+    const US_NAMES = new Set(['USA','US','United States','United States of America']);
     const inferredForeign = explicitForeign.length ? explicitForeign : [
-      ...new Set(newSuppliers.map(s => extractCountryFromLocation(s.location)).filter(c => c && c !== 'USA' && c !== 'United States'))
+      ...new Set(newSuppliers.map(s => extractCountryFromLocation(s.location)).filter(c => c && !US_NAMES.has(c)))
     ];
     const tariffResult = inferredForeign.length
       ? await fetchTariffData(commodity, hts, inferredForeign).catch(e => { console.warn('Tariff lookup failed:', e.message); return null; })
@@ -808,8 +809,9 @@ function renderResults(commodity){
 // Extract country name from a "City, Country" location string
 function extractCountryFromLocation(location) {
   if (!location) return null;
-  const parts = location.split(',').map(p => p.trim());
-  return parts.length >= 2 ? parts[parts.length - 1] : null;
+  const parts = location.split(',').map(p => p.trim()).filter(Boolean);
+  // "City, Country" → last part; "Country" alone → the whole string
+  return parts.length >= 2 ? parts[parts.length - 1] : parts[0] || null;
 }
 
 // Find tariff rate for a supplier based on their country
@@ -842,8 +844,11 @@ function buildTariffBadgeHTML(supplier) {
   const stateAbbr = stateMatch ? stateMatch[1] : null;
   const US_STATE_ABBRS = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']);
   const isUS = (stateAbbr && US_STATE_ABBRS.has(stateAbbr))
+    || locationUpper === 'USA'
+    || locationUpper === 'UNITED STATES'
     || locationUpper.includes('UNITED STATES')
-    || locationUpper.includes(', USA');
+    || locationUpper.endsWith(', USA')
+    || locationUpper.endsWith(', US');
 
   if (isUS) {
     return {
