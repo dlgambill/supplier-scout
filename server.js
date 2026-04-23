@@ -106,6 +106,30 @@ function isForeignLocation(location) {
   return FOREIGN_INDICATORS.some(f => loc.includes(f));
 }
 
+const DISTRIBUTOR_KEYWORDS = ['distributor', 'distribution', 'wholesale', 'wholesaler', 'reseller',
+  'trader', 'trading company', 'import', 'exporter', 'stockist', 'supplier only', 'master dist'];
+const MANUFACTURER_KEYWORDS = ['manufactur', 'fabricat', 'oem', 'production', 'machining', 'casting',
+  'forging', 'stamping', 'molding', 'extru', 'assembl', 'maker', 'producer'];
+
+function isDistributor(s) {
+  const text = ((s.specialty || '') + ' ' + (s.tags || []).join(' ')).toLowerCase();
+  const hasDist = DISTRIBUTOR_KEYWORDS.some(k => text.includes(k));
+  const hasMfg = MANUFACTURER_KEYWORDS.some(k => text.includes(k));
+  return hasDist && !hasMfg;
+}
+
+function isManufacturer(s) {
+  const text = ((s.specialty || '') + ' ' + (s.tags || []).join(' ') + ' ' + (s.source || '')).toLowerCase();
+  return MANUFACTURER_KEYWORDS.some(k => text.includes(k)) ||
+    (!DISTRIBUTOR_KEYWORDS.some(k => text.includes(k))); // if not clearly a distributor, assume manufacturer
+}
+
+function filterBySupplierType(suppliers, supplierType) {
+  if (supplierType === 'manufacturers') return suppliers.filter(s => isManufacturer(s));
+  if (supplierType === 'distributors') return suppliers.filter(s => isDistributor(s));
+  return suppliers;
+}
+
 function filterByScope(suppliers, scope, countries, selectedCountries) {
   if (!Array.isArray(suppliers)) return suppliers;
   // Always remove junk entries
@@ -266,7 +290,7 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, selectedCountries, imageData, imageType } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType } = req.body;
     const cleanedCommodity = cleanCommodity(commodity);
 
     // Build dynamic geography string from selected countries
@@ -283,6 +307,11 @@ app.post('/api/search', async (req, res) => {
       : 'Global (no restriction)';
 
     const certText = certs ? certs : 'None';
+    const supplierTypeText = supplierType === 'manufacturers'
+      ? 'SUPPLIER TYPE: Return manufacturers and OEMs ONLY. Exclude all distributors, resellers, traders, and wholesalers.'
+      : supplierType === 'distributors'
+      ? 'SUPPLIER TYPE: Return distributors and wholesalers ONLY. Exclude direct-only manufacturers.'
+      : 'SUPPLIER TYPE: Include both manufacturers and distributors.';
     const htsText = hts ? hts : 'None';
 
     const sourceInstructions = sources && sources.length
@@ -333,7 +362,7 @@ Perform deep-web research using Google Search to identify verified ${geoSelected
   }
 ]
 
-GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any companies outside ${geoSelected}. Begin JSON output now.`;
+GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any companies outside ${geoSelected}. ${supplierTypeText} Begin JSON output now.`;
 
     let responseText;
     let usedGemini = false;
@@ -368,6 +397,10 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       if (Array.isArray(suppliers)) {
         const before = suppliers.length;
         suppliers = filterByScope(suppliers, scope, countries, selectedCountries);
+        if (supplierType && supplierType !== 'both') {
+          suppliers = filterBySupplierType(suppliers, supplierType);
+          console.log(`Supplier type filter (${supplierType}): ${suppliers.length} remaining`);
+        }
         console.log(`Geography filter: ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
         // Re-number IDs after filtering
         suppliers.forEach((s, i) => s.id = i + 1);
