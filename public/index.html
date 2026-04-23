@@ -704,10 +704,11 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       ...new Set(newSuppliers.map(s => extractCountryFromLocation(s.location)).filter(c => c && !US_NAMES.has(c)))
     ];
     const tariffResult = inferredForeign.length
-      ? await fetchTariffData(commodity, hts, inferredForeign).catch(e => { console.warn('Tariff lookup failed:', e.message); return null; })
+      ? await fetchTariffData(commodity, hts, inferredForeign).catch(e => { console.error('Tariff lookup failed:', e.message); return null; })
       : null;
 
     currentTariffData = tariffResult;
+    console.log('currentTariffData:', JSON.stringify(currentTariffData));
 
     if(isFirst){
       suppliers=newSuppliers;
@@ -858,7 +859,13 @@ function buildTariffBadgeHTML(supplier) {
   }
 
   const tariff = getTariffForSupplier(supplier);
-  if (!tariff) return { col: '<div class="tariff-col"></div>', detail: '' };
+  if (!tariff) {
+    // Show placeholder so we know badge slot is rendering but data unavailable
+    return {
+      col: `<div class="tariff-col"><div class="tariff-badge loading"><div class="tb-country">US Duty</div><div class="tb-rate" style="font-size:13px">—</div><div class="tb-hts">data unavailable</div></div></div>`,
+      detail: ''
+    };
+  }
 
   const htsCode = currentTariffData.hts_code || '';
   const assumed = currentTariffData.assumed;
