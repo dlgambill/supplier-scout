@@ -256,11 +256,32 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
   return text;
 }
 
-// ── Gemini call WITHOUT search tool (for structured JSON tasks like HTS) ──
+// ── Gemini call WITH Google Search grounding (for live tariff lookups) ──
 async function callGeminiJSON(prompt, geminiKey) {
   for (const model of GEMINI_MODELS) {
     try {
+      // First attempt: with Google Search grounding for live/accurate tariff data
       const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: 'You are a US customs and trade compliance expert with access to current tariff data. Use Google Search to find the most current US import duty rates. Return only valid JSON with no markdown or preamble.' }] },
+            contents: [{ parts: [{ text: prompt }] }],
+            tools: [{ googleSearch: {} }],
+            generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
+          })
+        }
+      );
+      if (!res.ok) { const e = await res.text(); throw new Error(`Gemini ${res.status}: ${e.substring(0,200)}`); }
+      const data = await res.json();
+      const text = data?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+      if (text) { console.log(`HTS tariff lookup via ${model} with search succeeded`); return text; }
+
+      // Fallback: without search tool if grounded call returned empty
+      console.warn(`${model} grounded call empty, retrying without search tool...`);
+      const res2 = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
         {
           method: 'POST',
@@ -272,16 +293,15 @@ async function callGeminiJSON(prompt, geminiKey) {
           })
         }
       );
-      if (!res.ok) { const e = await res.text(); throw new Error(`Gemini ${res.status}: ${e.substring(0,200)}`); }
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
-      if (text) return text;
-      throw new Error('Empty response');
+      const data2 = await res2.json();
+      const text2 = data2?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+      if (text2) return text2;
+      throw new Error('Empty response from both attempts');
     } catch (err) {
       console.warn(`callGeminiJSON ${model} failed: ${err.message}`);
     }
   }
-  throw new Error('All Gemini models failed for JSON call');
+  throw new Error('All Gemini models failed for tariff lookup');
 }
 
 // ── Claude fallback ────────────────────────────────────────────────────────
@@ -345,66 +365,83 @@ app.post('/api/hts-tariff', async (req, res) => {
     }
 
     const htsPrompt = htsOverride
-      ? `The user has provided HTS code: ${htsOverride} for this product: "${commodity}".
-Verify this is a plausible HTS code and return the official description.
-Then look up the current US import duty rates for importing under this HTS code from each of these countries: ${countryList.join(', ') || 'general'}.
+      ? `Search for the current official US import duty rates for HTS code ${htsOverride}.
 
-Include:
-- Base MFN (Most Favored Nation) rate
-- Any Section 301 tariffs (China)
-- Any IEEPA emergency tariffs (2025)
-- Any Section 232 tariffs
-- Total combined rate
+Product: "${commodity || 'not specified'}"
+HTS Code: ${htsOverride}
+Countries to look up: ${countryList.join(', ') || 'general'}
+Today's date: ${new Date().toISOString().split('T')[0]}
 
-Return ONLY valid JSON (no markdown):
+Use Google Search to find the current rates from:
+- USITC HTS database (hts.usitc.gov)
+- CBP (cbp.gov)
+- Recent trade news for any IEEPA/Section 301 updates
+
+For each country provide:
+- base_mfn: the base MFN general rate (from Column 1 General of HTS schedule)
+- additional_duties: any additional tariffs stacked on top (Section 301, IEEPA, Section 232, etc.)
+- additional_type: name of the additional tariff program
+- total_rate: sum of all applicable rates
+- notes: key context (e.g. which Section 301 list, IEEPA status)
+
+Important accuracy notes as of 2025:
+- China: base MFN + Section 301 list duties (7.5-25%) + IEEPA tariffs (currently very high, 125%+)
+- Mexico/Canada: USMCA qualifying goods often 0%, but non-qualifying goods face IEEPA 25% tariff
+- Vietnam: base MFN, may have some Section 301 if in supply chain
+- All others: typically base MFN only unless specific programs apply
+
+Return ONLY valid JSON (no markdown, no preamble):
 {
   "hts_code": "${htsOverride}",
-  "hts_description": "official USITC description",
+  "hts_description": "official USITC description for this code",
   "assumed": false,
   "rates": {
     "CountryName": {
       "total_rate": "XX.X%",
       "base_mfn": "X.X%",
       "additional_duties": "XX%",
-      "additional_type": "Section 301 / IEEPA / Section 232 / None",
-      "notes": "brief note on applicable tariff programs"
+      "additional_type": "Section 301 List 3 / IEEPA / Section 232 / None",
+      "notes": "brief accurate note"
     }
   }
 }`
-      : `You are a US customs classification expert with current knowledge of the USITC Harmonized Tariff Schedule.
+      : `Search for the correct HTS classification and current US import duty rates for this product.
 
 Product description: "${commodity}"
+Countries to look up: ${countryList.join(', ') || 'general'}
+Today's date: ${new Date().toISOString().split('T')[0]}
 
-Step 1: Determine the most accurate 10-digit HTS code for this product.
-Step 2: Look up the current US import duty rates for this HTS code from each of these countries: ${countryList.join(', ') || 'general'}.
+Step 1: Search hts.usitc.gov or CBP resources to find the most accurate 10-digit HTS code for this product.
+Step 2: Look up the current duty rates for each country listed.
 
-Include:
-- Base MFN rate
-- Section 301 tariffs if applicable (mainly China)
-- IEEPA emergency tariffs (2025) if applicable
-- Section 232 tariffs if applicable (steel/aluminum)
-- Total combined rate
+For each country provide:
+- base_mfn: the base MFN general rate from HTS Column 1 General
+- additional_duties: stacked tariffs (Section 301, IEEPA, Section 232, etc.)
+- additional_type: name of the additional tariff program
+- total_rate: sum of all applicable rates
+- notes: key context
 
-Be accurate and specific. As of 2025:
-- China faces heavy additional duties (Section 301 + IEEPA, often 125-145% additional)
-- India: typically base MFN only unless specific programs apply
-- Taiwan: typically base MFN only
-- Mexico/Canada: often 0% under USMCA for qualifying goods, but check IEEPA 25% tariff
-- Vietnam: base MFN, some Section 301 exposure
+Important accuracy notes as of 2025:
+- China: base MFN + Section 301 list duties (7.5-25%) + IEEPA tariffs (currently 125%+, making total often 145%+)
+- Mexico/Canada: USMCA qualifying goods 0%, non-qualifying face IEEPA 25%
+- India: base MFN + recent IEEPA tariffs (check current status)
+- Vietnam: base MFN, possible Section 301 exposure
+- Taiwan: base MFN only typically
+- All others: typically base MFN unless specific programs apply
 
-Return ONLY valid JSON (no markdown):
+Return ONLY valid JSON (no markdown, no preamble):
 {
   "hts_code": "NNNN.NN.NNNN",
   "hts_description": "official USITC description",
   "assumed": true,
-  "reasoning": "brief explanation of classification",
+  "reasoning": "brief classification reasoning",
   "rates": {
     "CountryName": {
       "total_rate": "XX.X%",
       "base_mfn": "X.X%",
       "additional_duties": "XX%",
-      "additional_type": "Section 301 / IEEPA / Section 232 / None",
-      "notes": "brief note"
+      "additional_type": "Section 301 List X / IEEPA / Section 232 / None",
+      "notes": "brief accurate note"
     }
   }
 }`;
