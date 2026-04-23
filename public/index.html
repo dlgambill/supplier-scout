@@ -320,8 +320,8 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div class="input-block">
-      <label>HTS Code <span style="color:var(--text3)">(optional — enter your own or leave blank to auto-infer per supplier country)</span></label>
-      <input type="text" id="htsInput" placeholder="e.g. 7318.15, 8544.42.9000..." />
+      <label>HTS Code <span style="color:var(--text3)">(optional — enter full 10-digit code for best accuracy, e.g. 8481.80.30.70)</span></label>
+      <input type="text" id="htsInput" placeholder="e.g. 8481.80.30.70, 7318.15.20.00..." />
     </div>
 
     <div class="input-block">
@@ -458,7 +458,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
     <div class="input-block">
       <label>HTS Code <span style="color:var(--text3)">(optional)</span></label>
-      <input type="text" id="refineHts" placeholder="e.g. 7318.15..." />
+      <input type="text" id="refineHts" placeholder="e.g. 8481.80.30.70 (full 10-digit)" />
     </div>
     <div class="modal-actions">
       <button class="btn-launch" onclick="runRefinedSearch()" style="clip-path:none;">RE-RUN SEARCH &#8594;</button>
