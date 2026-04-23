@@ -14,6 +14,9 @@
   --accent:#e8a020; --accent2:#f0c060;
   --text:#d8dde8; --text2:#9aa3b8; --text3:#6a7490;
   --green:#2ecc71; --red:#e74c3c; --blue:#4a9eff;
+  --tariff-bg:rgba(210,153,34,0.08); --tariff-border:rgba(210,153,34,0.3);
+  --tariff-assumed-bg:rgba(74,100,180,0.08); --tariff-assumed-border:rgba(74,100,180,0.3);
+  --tariff-loading-bg:rgba(255,255,255,0.03);
 }
 body { background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
 body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
@@ -38,7 +41,6 @@ textarea, input[type="text"] { width:100%; background:var(--surface); border:1px
 textarea:focus, input:focus { border-color:var(--accent); }
 textarea::placeholder, input::placeholder { color:var(--text3); }
 
-/* Image paste area */
 .commodity-wrap { position:relative; }
 .commodity-wrap textarea { padding-bottom:44px; }
 .paste-hint { position:absolute; bottom:10px; left:14px; font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); pointer-events:none; }
@@ -54,7 +56,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .source-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 .country-check { padding:5px 12px; border:1px solid var(--border2); background:var(--surface); color:var(--text3); font-family:'IBM Plex Mono',monospace; font-size:11px; cursor:pointer; transition:all 0.2s; user-select:none; border-radius:2px; }
 .country-check.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
-.country-check.usa { border-color:var(--border2); color:var(--text3); }
 .country-check.usa.selected { border-color:var(--blue); background:rgba(74,158,255,0.1); color:var(--blue); }
 .pill.selected { border-color:var(--accent); background:rgba(232,160,32,0.1); color:var(--accent); }
 
@@ -93,6 +94,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .tab { padding:9px 18px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; color:var(--text3); background:transparent; border:none; border-bottom:2px solid transparent; margin-bottom:-1px; transition:all 0.2s; }
 .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
 
+/* ── Supplier card ─────────────────────────────────────────── */
 .supplier-card { background:var(--surface); border:1px solid var(--border); padding:13px 16px; display:grid; grid-template-columns:20px 26px 1fr auto; gap:10px; align-items:start; margin-bottom:2px; transition:border-color 0.2s; }
 .supplier-card:hover { border-color:var(--border2); }
 .supplier-card.expanded { border-color:var(--accent); }
@@ -105,22 +107,85 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .card-meta { display:flex; gap:9px; align-items:center; flex-wrap:wrap; }
 .card-location { font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--text2); }
 .card-source { font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--text3); background:var(--surface2); border:1px solid var(--border); padding:2px 6px; }
-.card-source-link { text-decoration:none; cursor:pointer; transition:all 0.2s; }
-.card-source-link:hover { color:var(--accent); border-color:var(--accent); background:rgba(232,160,32,0.08); }
 .card-tags { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
 .tag { font-family:'IBM Plex Mono',monospace; font-size:10px; padding:2px 7px; border:1px solid var(--border2); color:var(--text2); }
 .tag.cert { border-color:var(--blue); color:var(--blue); }
+
+/* ── Tariff badge — shown between location row and fit badge ── */
+.tariff-badge-wrap {
+  grid-column: 3;
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  width: fit-content;
+}
+.tariff-badge {
+  display: inline-flex;
+  flex-direction: column;
+  padding: 4px 10px;
+  border: 1px solid var(--tariff-border);
+  background: var(--tariff-bg);
+  border-radius: 3px;
+  font-family: 'IBM Plex Mono', monospace;
+  min-width: 130px;
+}
+.tariff-badge.assumed {
+  border-color: var(--tariff-assumed-border);
+  background: var(--tariff-assumed-bg);
+  border-style: dashed;
+}
+.tariff-badge.loading {
+  border-color: var(--border2);
+  background: var(--tariff-loading-bg);
+  animation: tbPulse 1.4s ease-in-out infinite;
+}
+.tariff-badge.error {
+  border-color: rgba(231,76,60,0.3);
+  background: rgba(231,76,60,0.05);
+}
+@keyframes tbPulse { 0%,100%{opacity:.45} 50%{opacity:1} }
+
+.tb-country { font-size: 9px; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 2px; }
+.tariff-badge .tb-country         { color: var(--accent); }
+.tariff-badge.assumed .tb-country { color: #6a80c8; }
+.tariff-badge.loading .tb-country { color: var(--text3); }
+.tariff-badge.error   .tb-country { color: var(--red); }
+
+.tb-rate { font-size: 14px; font-weight: 500; }
+.tariff-badge .tb-rate         { color: var(--accent); }
+.tariff-badge.assumed .tb-rate { color: #8a9ee0; }
+.tariff-badge.loading .tb-rate { color: var(--text3); }
+.tariff-badge.error   .tb-rate { color: var(--red); }
+
+.tb-hts { font-size: 9px; margin-top: 1px; }
+.tariff-badge .tb-hts         { color: rgba(232,160,32,.45); }
+.tariff-badge.assumed .tb-hts { color: rgba(100,120,200,.45); }
+.tariff-badge.loading .tb-hts,
+.tariff-badge.error   .tb-hts { color: var(--text3); }
+
+/* Tariff breakdown row inside expanded card */
+.tariff-detail {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  color: var(--text3);
+  line-height: 1.9;
+}
+.tariff-detail span { color: var(--text2); }
+.tariff-detail .td-total { color: var(--accent); font-weight: 500; }
+.tariff-detail .td-add   { color: var(--red); }
+
 .card-expand { display:none; grid-column:1/-1; padding-top:12px; margin-top:10px; border-top:1px solid var(--border); }
 .supplier-card.expanded .card-expand { display:block; }
 .card-expand p { font-size:13px; color:var(--text2); line-height:1.6; margin-bottom:7px; }
 .card-expand .note { font-size:12px; color:var(--text3); font-style:italic; }
-/* Contact info block */
-.card-contact { display:flex; gap:18px; margin-top:8px; margin-bottom:6px; flex-wrap:wrap; }
-.card-contact-item { display:flex; align-items:center; gap:6px; font-family:'IBM Plex Mono',monospace; font-size:12px; }
-.card-contact-label { color:var(--text3); font-size:10px; letter-spacing:1px; text-transform:uppercase; }
-.card-contact-value { color:var(--text); }
-.card-contact-email { color:var(--accent); text-decoration:none; }
-.card-contact-email:hover { text-decoration:underline; }
 .card-url { font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--blue); text-decoration:none; }
 .card-url:hover { text-decoration:underline; }
 .fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
@@ -148,7 +213,6 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 .email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
 .email-actions { display:flex; gap:8px; margin-top:12px; }
 
-/* Refine modal */
 .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; display:none; align-items:center; justify-content:center; }
 .modal-overlay.active { display:flex; }
 .modal { background:var(--surface); border:1px solid var(--accent); padding:28px; max-width:520px; width:90%; }
@@ -168,7 +232,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.0.2</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.1.0</div>
   </header>
 
   <div id="inputPanel">
@@ -249,7 +313,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div class="input-block">
-      <label>HTS Code <span style="color:var(--text3)">(optional — improves sourcing accuracy)</span></label>
+      <label>HTS Code <span style="color:var(--text3)">(optional — enter your own or leave blank to auto-infer per supplier country)</span></label>
       <input type="text" id="htsInput" placeholder="e.g. 7318.15, 8544.42.9000..." />
     </div>
 
@@ -332,10 +396,10 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div id="degradedBanner" style="display:none;background:rgba(231,76,60,0.07);border:1px solid rgba(231,76,60,0.3);padding:9px 14px;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#e74c3c;line-height:1.7;">
-      &#9888;&nbsp; <strong>Degraded mode</strong> — GEMINI_API_KEY not configured. Results are AI-generated from training data and may be less accurate. Add a Gemini API key for live web search.
+      &#9888;&nbsp; <strong>Degraded mode</strong> — GEMINI_API_KEY not configured. Results are AI-generated from training data and may be less accurate.
     </div>
     <div style="background:rgba(232,160,32,0.06);border:1px solid rgba(232,160,32,0.25);padding:9px 14px;margin-bottom:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);line-height:1.7;">
-      &#9888;&nbsp; <span style="color:var(--accent);">Always verify suppliers before outreach.</span> Use the "Verify on Google" button on each card to confirm the company is real and makes this product.
+      &#9888;&nbsp; <span style="color:var(--accent);">Always verify suppliers before outreach.</span> Tariff rates are AI-estimated — verify with a licensed customs broker before making sourcing decisions.
     </div>
     <div class="results-toolbar">
       <button class="btn-sm refine" onclick="openRefineModal()">&#9998; Refine Search</button>
@@ -402,11 +466,13 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both';
 let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
+// Shared HTS tariff data for current search — keyed by country name
+let currentTariffData = null;
 
 const STEPS={
-  domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
-  foreign:["Running live Google searches","Scanning international trade directories","Extracting & verifying companies","Scoring supplier fit"],
-  both:["Running live Google searches","Scanning domestic & international directories","Extracting & verifying companies","Scoring supplier fit"]
+  domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Looking up HTS & tariff rates","Scoring supplier fit"],
+  foreign:["Running live Google searches","Scanning international trade directories","Extracting & verifying companies","Looking up HTS & tariff rates","Scoring supplier fit"],
+  both:["Running live Google searches","Scanning domestic & international directories","Extracting & verifying companies","Looking up HTS & tariff rates","Scoring supplier fit"]
 };
 
 // Supplier type pills
@@ -416,12 +482,10 @@ document.querySelectorAll('#supplierTypePills .pill').forEach(p=>p.addEventListe
   supplierType=p.dataset.val;
 }));
 
-// Source checkboxes
 document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.addEventListener('click',()=>{
   el.classList.toggle('selected');
 }));
 
-// Country checkboxes
 document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.addEventListener('click',()=>{
   if(el.id==='otherCountryCheck'){
     el.classList.toggle('selected');
@@ -431,14 +495,12 @@ document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.ad
   }
 }));
 
-// Get selected countries as array
 function getSelectedCountries(){
   const selected=[];
   document.querySelectorAll('#countryCheckboxes .country-check.selected').forEach(el=>{
-    if(el.id==='otherCountryCheck') return; // skip the Other toggle itself
+    if(el.id==='otherCountryCheck') return;
     selected.push(el.dataset.val);
   });
-  // Add any typed "other" countries
   const otherCheck=document.getElementById('otherCountryCheck');
   if(otherCheck&&otherCheck.classList.contains('selected')){
     const otherVal=document.getElementById('countryInput').value.trim();
@@ -447,7 +509,6 @@ function getSelectedCountries(){
   return selected;
 }
 
-// Derive scope from selected countries (for server compatibility)
 function getScopeFromCountries(countries){
   if(!countries.length) return 'both';
   const hasUSA=countries.includes('USA');
@@ -471,7 +532,6 @@ function clearAllCountries(){
   document.getElementById('allCountriesBtn').classList.remove('selected');
 }
 
-// Image paste handler
 document.getElementById('commodityInput').addEventListener('paste',e=>{
   const items=e.clipboardData&&e.clipboardData.items;
   if(!items) return;
@@ -515,12 +575,9 @@ function toggleOpt(type){
   }
 }
 
-
-
 function parseClaudeJSON(data) {
   let raw=(data.content||[]).filter(b=>b.type==='text').map(b=>b.text).join('');
   raw=raw.replace(/```json[\s\S]*?```/g,m=>m.slice(7,-3)).replace(/```/g,'').trim();
-  // Remove control characters
   raw=raw.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,' ');
   const firstBracket=raw.indexOf('[');
   const firstBrace=raw.indexOf('{');
@@ -529,7 +586,6 @@ function parseClaudeJSON(data) {
   const openChar=isArray?'[':'{';
   const closeChar=isArray?']':'}';
   const start=isArray?firstBracket:firstBrace;
-  // Walk forward counting brackets to find exact closing bracket
   let depth=0, inString=false, escape=false, end=-1;
   for(let i=start;i<raw.length;i++){
     const ch=raw[i];
@@ -549,7 +605,6 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
-  // Show live search badge if Gemini was used (usedSerpApi flag reused for Gemini)
   if(data.usedSerpApi){
     document.getElementById('liveSearchBadge').style.display='inline-flex';
     document.getElementById('degradedBanner').style.display='none';
@@ -558,6 +613,21 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     document.getElementById('degradedBanner').style.display='block';
   }
   return parseClaudeJSON(data.claudeData);
+}
+
+// Fetch HTS + tariff data for the current search
+async function fetchTariffData(commodity, htsOverride, countries) {
+  const foreignCountries = (countries||[]).filter(c => c !== 'USA');
+  if (!foreignCountries.length) return null; // No tariff data needed for domestic-only
+
+  const res = await fetch('/api/hts-tariff', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commodity, htsOverride: htsOverride||'', countries: foreignCountries })
+  });
+  const data = await res.json();
+  if (data.error) throw new Error('Tariff lookup: ' + data.error);
+  return data;
 }
 
 async function callEmail(commodity, includeAttach, attachList){
@@ -593,6 +663,7 @@ async function runSearch(){
 async function _executeSearch(commodity, searchScope, certs, countries, hts, isFirst){
   document.getElementById('loadingPanel').classList.add('active');
   setProgress(0,'Starting...');
+  currentTariffData = null;
 
   const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
   const baseSteps=[...STEPS[searchScope]];
@@ -614,14 +685,23 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   },950);
 
   try{
-    const newSuppliers = await callSearch(commodity, searchScope, certs, countries, hts,
-      (pastedImageData&&isFirst)?pastedImageData:null,
-      (pastedImageType&&isFirst)?pastedImageType:null);
+    // Run supplier search and tariff lookup in parallel
+    const foreignCountries = currentCountries.filter(c => c !== 'USA');
+    const [newSuppliers, tariffResult] = await Promise.all([
+      callSearch(commodity, searchScope, certs, countries, hts,
+        (pastedImageData&&isFirst)?pastedImageData:null,
+        (pastedImageType&&isFirst)?pastedImageType:null),
+      foreignCountries.length ? fetchTariffData(commodity, hts||'', currentCountries).catch(e => {
+        console.warn('Tariff lookup failed (non-fatal):', e.message);
+        return null;
+      }) : Promise.resolve(null)
+    ]);
+
+    currentTariffData = tariffResult;
 
     if(isFirst){
       suppliers=newSuppliers;
     } else {
-      // Merge, deduplicate
       const existingNames=new Set(suppliers.map(s=>s.name.toLowerCase().trim()));
       const fresh=newSuppliers.filter(s=>!existingNames.has(s.name.toLowerCase().trim()));
       const startId=suppliers.length+1;
@@ -633,7 +713,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     if(includeEmails&&isFirst){
       const emailTemplate=await callEmail(commodity, includeAttach, attachList);
       emails=[emailTemplate];
-    } else if(!isFirst){ /* keep existing emails */ }
+    }
 
     clearInterval(interval);
     setProgress(100,'Complete!');
@@ -663,25 +743,20 @@ async function searchMoreSources(){
   await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false);
 }
 
-// Refine modal
 function openRefineModal(){
   document.getElementById('refineCommodity').value=currentCommodity!=='[see attached image]'?currentCommodity:'';
   document.getElementById('refineCerts').value=currentCerts;
   document.getElementById('refineModal').classList.add('active');
 }
-function closeRefineModal(){
-  document.getElementById('refineModal').classList.remove('active');
-}
+function closeRefineModal(){ document.getElementById('refineModal').classList.remove('active'); }
 async function runRefinedSearch(){
   const newCommodity=document.getElementById('refineCommodity').value.trim();
   const newCerts=document.getElementById('refineCerts').value.trim();
   const newHts=document.getElementById('refineHts').value.trim();
   if(!newCommodity){showToast('Please enter a description');return;}
-  currentCommodity=newCommodity;
-  currentCerts=newCerts;
-  currentHts=newHts;
+  currentCommodity=newCommodity; currentCerts=newCerts; currentHts=newHts;
   closeRefineModal();
-  suppliers=[]; emails=[];
+  suppliers=[]; emails=[]; currentTariffData=null;
   document.getElementById('resultsPanel').classList.remove('active');
   const scope=getScopeFromCountries(currentCountries);
   await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, true);
@@ -693,7 +768,6 @@ function setFitFilter(val,el){
   el.classList.add('active');
   applyFitFilter();
 }
-
 function applyFitFilter(){
   document.querySelectorAll('.supplier-card').forEach(card=>{
     const fit=card.dataset.fit;
@@ -703,11 +777,7 @@ function applyFitFilter(){
     card.classList.toggle('hidden',!show);
   });
 }
-
-function selectAll(val){
-  document.querySelectorAll('.supplier-card:not(.hidden) .card-checkbox input').forEach(cb=>cb.checked=val);
-}
-
+function selectAll(val){ document.querySelectorAll('.supplier-card:not(.hidden) .card-checkbox input').forEach(cb=>cb.checked=val); }
 function getSelectedSuppliers(){
   const selected=[];
   document.querySelectorAll('.supplier-card').forEach(card=>{
@@ -726,14 +796,90 @@ function renderResults(commodity){
   renderEmailCards();
 }
 
+// Extract country name from a "City, Country" location string
+function extractCountryFromLocation(location) {
+  if (!location) return null;
+  const parts = location.split(',').map(p => p.trim());
+  return parts.length >= 2 ? parts[parts.length - 1] : null;
+}
 
+// Find tariff rate for a supplier based on their country
+function getTariffForSupplier(supplier) {
+  if (!currentTariffData || !currentTariffData.rates) return null;
+
+  const country = extractCountryFromLocation(supplier.location);
+  if (!country) return null;
+
+  // Try direct match first, then partial match
+  const rates = currentTariffData.rates;
+  const countryLower = country.toLowerCase();
+
+  for (const key of Object.keys(rates)) {
+    if (key.toLowerCase() === countryLower) return { country: key, ...rates[key] };
+  }
+  // Partial match (e.g. "Taiwan" matches "Taiwan, Province of China")
+  for (const key of Object.keys(rates)) {
+    if (key.toLowerCase().includes(countryLower) || countryLower.includes(key.toLowerCase())) {
+      return { country: key, ...rates[key] };
+    }
+  }
+  return null;
+}
+
+function buildTariffBadgeHTML(supplier) {
+  // US suppliers — no import tariff
+  const loc = (supplier.location || '').toLowerCase();
+  const isUS = loc.includes(', tx') || loc.includes(', ca') || loc.includes(', ny') ||
+               loc.includes(', il') || loc.includes('united states') || loc.includes(', usa') ||
+               /,\s*[a-z]{2}$/.test(supplier.location||'') && !loc.includes('china') && !loc.includes('taiwan') && !loc.includes('india');
+
+  // Try to detect US by checking against known US state pattern
+  const locationUpper = (supplier.location || '').toUpperCase();
+  const endsWithState = /,\s*([A-Z]{2})$/.test(locationUpper);
+  const stateAbbr = endsWithState ? locationUpper.match(/,\s*([A-Z]{2})$/)?.[1] : null;
+  const US_STATE_ABBRS = new Set(['AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC']);
+  if (stateAbbr && US_STATE_ABBRS.has(stateAbbr)) {
+    return `<div class="tariff-badge-wrap">
+      <div class="tariff-badge" style="border-color:rgba(46,204,113,0.25);background:rgba(46,204,113,0.05);">
+        <div class="tb-country" style="color:#2ecc71">US Supplier</div>
+        <div class="tb-rate" style="color:#2ecc71">No Import Duty</div>
+        <div class="tb-hts" style="color:rgba(46,204,113,0.4)">Domestic</div>
+      </div>
+    </div>`;
+  }
+
+  const tariff = getTariffForSupplier(supplier);
+  if (!tariff) return ''; // No tariff data for this country — omit badge
+
+  const htsCode = currentTariffData.hts_code || '';
+  const assumed = currentTariffData.assumed;
+  const badgeClass = assumed ? 'tariff-badge assumed' : 'tariff-badge';
+  const country = extractCountryFromLocation(supplier.location) || tariff.country;
+
+  // Build detail row for expanded view
+  const detailId = 'tariff-detail-' + supplier.id;
+  const detailHTML = `<div class="tariff-detail" id="${detailId}">
+    <div><div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;color:var(--text3)">Base MFN</div><span>${tariff.base_mfn || '—'}</span></div>
+    <div><div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;color:var(--text3)">${tariff.additional_type || 'Additional'}</div><span class="td-add">${tariff.additional_duties && tariff.additional_duties !== '0%' ? tariff.additional_duties : 'None'}</span></div>
+    <div><div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;color:var(--text3)">Total Rate</div><span class="td-total">${tariff.total_rate || '—'}</span></div>
+    ${tariff.notes ? `<div style="flex-basis:100%;font-size:10px;color:var(--text3);font-style:italic;margin-top:2px;">${tariff.notes}</div>` : ''}
+    <div style="flex-basis:100%;font-size:9px;color:var(--text3);margin-top:2px;">HTS ${htsCode}${assumed?' (inferred — verify with customs broker)':''}</div>
+  </div>`;
+
+  return `<div class="tariff-badge-wrap">
+    <div class="${badgeClass}" title="Click card to see breakdown">
+      <div class="tb-country">US Duty · ${country}</div>
+      <div class="tb-rate">${tariff.total_rate || '—'}</div>
+      <div class="tb-hts">${htsCode}${assumed?' (inferred)':''}</div>
+    </div>
+  </div>
+  <!-- tariff detail injected into expand section below -->
+  <template data-tariff-detail="${supplier.id}">${detailHTML}</template>`;
+}
 
 function buildSearchQuery(){
-  // Build a clean product search string from commodity + HTS + certs + countries
-  // Never include company names — only product/commodity terms
   let parts=[];
   if(currentCommodity && currentCommodity!=='[see attached image]'){
-    // Take first 60 chars to keep URLs clean
     parts.push(currentCommodity.substring(0,60));
   }
   if(currentHts) parts.push('HTS '+currentHts);
@@ -744,34 +890,34 @@ function getSourceSearchUrl(source){
   const query=buildSearchQuery();
   const q=encodeURIComponent(query);
   const s=(source||'').toLowerCase();
-  if(s.includes('thomasnet'))     return 'https://www.thomasnet.com/search/?what='+q;
-  if(s.includes('kompass'))       return 'https://us.kompass.com/searchCompanies/?text='+q;
-  if(s.includes('importyeti'))    return 'https://www.importyeti.com/search?query='+q;
-  if(s.includes('mfg.com'))       return 'https://www.mfg.com/search?q='+q;
-  if(s.includes('industrynet'))   return 'https://industrynet.com/search/?q='+q;
-  if(s.includes('europages'))     return 'https://www.europages.co.uk/en/search?q='+q;
-  if(s.includes("maker")||s.includes('makers row')) return 'https://makersrow.com/search?q='+q;
-  if(s.includes('trade association')||s.includes('direct')) return 'https://www.google.com/search?q='+encodeURIComponent(query+' manufacturer');
-  // For any other source (Global Sources, HKTDC, Alibaba, etc.) fall back to Google search for the company name
+  if(s.includes('thomasnet'))   return 'https://www.thomasnet.com/search/?what='+q;
+  if(s.includes('kompass'))     return 'https://us.kompass.com/searchCompanies/?text='+q;
+  if(s.includes('importyeti'))  return 'https://www.importyeti.com/search?query='+q;
+  if(s.includes('mfg.com'))     return 'https://www.mfg.com/search?q='+q;
+  if(s.includes('industrynet')) return 'https://industrynet.com/search/?q='+q;
+  if(s.includes('europages'))   return 'https://www.europages.co.uk/en/search?q='+q;
   return 'https://www.google.com/search?q='+encodeURIComponent(query)+'+manufacturer+supplier';
 }
+
 function renderSupplierCards(){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
   const grid=document.getElementById('supplierGrid');
   grid.innerHTML='';
+
   if(!suppliers.length){
     grid.innerHTML='<div style="padding:32px 20px;text-align:center;border:1px solid var(--border);background:var(--surface);">'
       +'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:16px;margin-bottom:12px;color:var(--text);">No suppliers found</div>'
       +'<div style="font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text3);line-height:1.8;max-width:480px;margin:0 auto;">'
       +'Possible reasons:<br>'
-      +'&bull; The product may be licensed IP (e.g. branded toys) with no open manufacturing<br>'
-      +'&bull; The search terms may be too specific — try simplifying your description<br>'
-      +'&bull; The scope (domestic/international) may not match where this product is made<br>'
-      +'&bull; Try clicking <strong style="color:var(--accent);">Search More Sources</strong> below for a second attempt'
+      +'&bull; The product may be licensed IP with no open manufacturing<br>'
+      +'&bull; The search terms may be too specific — try simplifying<br>'
+      +'&bull; The scope may not match where this product is made<br>'
+      +'&bull; Try clicking <strong style="color:var(--accent);">Search More Sources</strong> below'
       +'</div></div>';
     return;
   }
+
   suppliers.forEach(s=>{
     const d=document.createElement('div');
     d.className='supplier-card fade-in';
@@ -779,18 +925,26 @@ function renderSupplierCards(){
     const fc=fitColor(s.fit);
     const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
 
-
-    // Contact info — omitted; AI-generated contacts would be fabricated
-    const contactHtml='';
-
-
-    // Website — only show if present; add unverified indicator
     const websiteUrl=s.website?(s.website.startsWith('http')?s.website:'https://'+s.website):'';
-    const websiteHtml=websiteUrl?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>':'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
+    const websiteHtml=websiteUrl
+      ?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>'
+      :'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
     const sourceUrl=getSourceSearchUrl(s.source);
     const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a></div>';
     const verifyUrl='https://www.google.com/search?q='+encodeURIComponent('"'+s.name+'" '+currentCommodity+' manufacturer');
     const verifyBtn='<div style="margin-top:8px;"><a href="'+verifyUrl+'" target="_blank" onclick="event.stopPropagation()" class="btn-verify">&#128269; Verify on Google</a></div>';
+
+    // Tariff badge HTML (includes hidden <template> with detail)
+    const tariffBadgeHTML = buildTariffBadgeHTML(s);
+
+    // Extract the detail template content from tariff badge HTML
+    const tempDiv = document.createElement('div');
+    tempDiv.innerHTML = tariffBadgeHTML;
+    const templateEl = tempDiv.querySelector('template');
+    const tariffDetailHTML = templateEl ? templateEl.innerHTML : '';
+    // Remove the template from the badge HTML
+    if (templateEl) templateEl.remove();
+    const cleanBadgeHTML = tempDiv.innerHTML;
 
     d.innerHTML=
       '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
@@ -798,21 +952,21 @@ function renderSupplierCards(){
       +'<div class="card-body">'
         +'<div class="card-name">'+s.name+'</div>'
         +'<div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div>'
+        +cleanBadgeHTML
         +'<div class="card-tags">'+tags+'</div>'
         +verifyBtn
         +'<div class="card-expand">'
           +'<p>'+s.specialty+'</p>'
           +'<p class="note">'+s.fitReason+'</p>'
-          +contactHtml
+          +tariffDetailHTML
           +websiteHtml
           +sourceHtml
         +'</div>'
       +'</div>'
       +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
 
-    // Only toggle expand when clicking the card header area, not links inside expand
     d.querySelector('.card-body').addEventListener('click', e => {
-      if(e.target.closest('a')) return; // let links through
+      if(e.target.closest('a')) return;
       d.classList.toggle('expanded');
     });
     grid.appendChild(d);
@@ -824,22 +978,18 @@ function renderEmailCards(){
   const eg=document.getElementById('emailGrid');
   eg.innerHTML='';
   if(!emails.length) return;
-
-  // Single shared template — show once with usage note
   const template=emails[0];
   const noteDiv=document.createElement('div');
   noteDiv.style.cssText='font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);margin-bottom:12px;padding:10px 14px;background:var(--surface);border:1px solid var(--border2);';
-  noteDiv.textContent='One email template generated. Contact emails are not auto-generated — find real contact info on the supplier\'s website or the directory link, then use "Open in Email" to launch your email client.';
+  noteDiv.textContent='One email template generated. Find real contact info on the supplier\'s website, then use "Open in Email" to launch your email client.';
   eg.appendChild(noteDiv);
 
-  // Per-supplier cards that open mailto
   const senderEmail=document.getElementById('senderEmail').value.trim();
   const selectedSups=suppliers.filter(s=>s.fit==='high'||s.fit==='medium').slice(0,20);
 
   selectedSups.forEach(s=>{
     const d=document.createElement('div');
     d.className='email-card';
-    // Personalize subject and body with supplier name
     const senderName=document.getElementById('senderName').value.trim()||'[Your Name]';
     const senderTitle=document.getElementById('senderTitle').value.trim()||'[Your Title]';
     const senderCompany=document.getElementById('senderCompany').value.trim()||'[Your Company]';
@@ -875,7 +1025,6 @@ function renderEmailCards(){
         +'</div>'
       +'</div>';
 
-    // Use event listeners — avoids inline onclick encoding issues with special chars
     d.querySelector('.email-header').addEventListener('click', () => d.classList.toggle('open'));
     d.querySelector('.btn-mailto').addEventListener('click', e => e.stopPropagation());
     d.querySelector('.btn-copy-body').addEventListener('click', e => { e.stopPropagation(); copyText(personalizedBody); });
@@ -905,16 +1054,20 @@ function printResults(){
   const sel=getSelectedSuppliers();
   const src=sel.length?sel:suppliers;
   const commodity=document.getElementById('resultsTitle').textContent;
-  let html='<html><head><title>SupplierScout - '+commodity+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;}h1{font-size:18px;margin-bottom:4px;}.meta{font-size:11px;color:#666;margin-bottom:20px;}table{width:100%;border-collapse:collapse;}th{background:#111;color:#fff;padding:8px 10px;text-align:left;font-size:11px;}td{padding:7px 10px;border-bottom:1px solid #e0e0e0;font-size:11px;vertical-align:top;}.hi{color:#1a9e50;font-weight:bold;}.me{color:#b07000;font-weight:bold;}.lo{color:#888;}@media print{body{padding:0;}}</style></head><body>';
-  html+='<h1>SupplierScout Results</h1><div class="meta">Commodity: '+commodity+' &nbsp;|&nbsp; '+src.length+' suppliers &nbsp;|&nbsp; '+new Date().toLocaleDateString()+'</div>';
-  html+='<table><thead><tr><th>#</th><th>Company</th><th>Location</th><th>Source</th><th>Contact</th><th>Email</th><th>Specialty</th><th>Fit</th></tr></thead><tbody>';
+  const htsInfo = currentTariffData ? ` | HTS: ${currentTariffData.hts_code}${currentTariffData.assumed?' (inferred)':''}` : '';
+  let html='<html><head><title>SupplierScout - '+commodity+'</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#111;padding:24px;}h1{font-size:18px;margin-bottom:4px;}.meta{font-size:11px;color:#666;margin-bottom:20px;}table{width:100%;border-collapse:collapse;}th{background:#111;color:#fff;padding:8px 10px;text-align:left;font-size:11px;}td{padding:7px 10px;border-bottom:1px solid #e0e0e0;font-size:11px;vertical-align:top;}.hi{color:#1a9e50;font-weight:bold;}.me{color:#b07000;font-weight:bold;}.lo{color:#888;}.tariff{color:#b07000;}@media print{body{padding:0;}}</style></head><body>';
+  html+='<h1>SupplierScout Results</h1><div class="meta">Commodity: '+commodity+htsInfo+' &nbsp;|&nbsp; '+src.length+' suppliers &nbsp;|&nbsp; '+new Date().toLocaleDateString()+'</div>';
+  html+='<table><thead><tr><th>#</th><th>Company</th><th>Location</th><th>Source</th><th>US Import Duty</th><th>HTS Code</th><th>Specialty</th><th>Fit</th></tr></thead><tbody>';
   src.forEach(s=>{
     const cls=s.fit==='high'?'hi':s.fit==='medium'?'me':'lo';
-    html+='<tr><td>'+s.id+'</td><td><strong>'+s.name+'</strong></td><td>'+s.location+'</td><td>'+s.source+'</td><td>'+(s.contactName||'—')+'</td><td>'+(s.contactEmail||'—')+'</td><td>'+s.specialty+'</td><td class="'+cls+'">'+s.fit.toUpperCase()+'</td></tr>';
+    const tariff = getTariffForSupplier(s);
+    const tariffCell = tariff ? tariff.total_rate : (s.location&&/,\s*[A-Z]{2}$/.test(s.location)?'Domestic':'—');
+    const htsCell = currentTariffData ? currentTariffData.hts_code : '—';
+    html+='<tr><td>'+s.id+'</td><td><strong>'+s.name+'</strong></td><td>'+s.location+'</td><td>'+s.source+'</td><td class="tariff">'+tariffCell+'</td><td>'+htsCell+'</td><td>'+s.specialty+'</td><td class="'+cls+'">'+s.fit.toUpperCase()+'</td></tr>';
   });
   html+='</tbody></table></body></html>';
   const w=window.open('','_blank');
-  w.document.write(html);w.document.close();w.focus();
+  w.document.write(html); w.document.close(); w.focus();
   setTimeout(()=>w.print(),500);
 }
 
@@ -922,11 +1075,17 @@ function downloadXLSX(){
   const sel=getSelectedSuppliers();
   const src=sel.length?sel:suppliers;
   const commodity=document.getElementById('resultsTitle').textContent;
-  const wsData=[['#','Company','Location','Source','Contact Name','Contact Email','Specialty','Tags','Certifications','Fit','Fit Reason','Website']];
-  src.forEach(s=>wsData.push([s.id,s.name,s.location,s.source,s.contactName||'',s.contactEmail||'',s.specialty,(s.tags||[]).join(', '),(s.certs||[]).join(', '),s.fit.toUpperCase(),s.fitReason,s.website]));
+  const wsData=[['#','Company','Location','Source','US Import Duty','HTS Code','HTS Inferred','Specialty','Tags','Certifications','Fit','Fit Reason','Website']];
+  src.forEach(s=>{
+    const tariff = getTariffForSupplier(s);
+    const tariffRate = tariff ? tariff.total_rate : (s.location&&/,\s*[A-Z]{2}$/.test(s.location)?'Domestic':'—');
+    const htsCode = currentTariffData ? currentTariffData.hts_code : '';
+    const htsInferred = currentTariffData ? (currentTariffData.assumed ? 'Yes' : 'No') : '';
+    wsData.push([s.id,s.name,s.location,s.source,tariffRate,htsCode,htsInferred,s.specialty,(s.tags||[]).join(', '),(s.certs||[]).join(', '),s.fit.toUpperCase(),s.fitReason,s.website]);
+  });
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.aoa_to_sheet(wsData);
-  ws['!cols']=[{wch:4},{wch:28},{wch:20},{wch:14},{wch:22},{wch:30},{wch:45},{wch:30},{wch:20},{wch:8},{wch:40},{wch:35}];
+  ws['!cols']=[{wch:4},{wch:28},{wch:20},{wch:14},{wch:14},{wch:16},{wch:10},{wch:45},{wch:30},{wch:20},{wch:8},{wch:40},{wch:35}];
   XLSX.utils.book_append_sheet(wb,ws,'Suppliers');
   if(emails.length){
     const template=emails[0];
@@ -943,34 +1102,21 @@ function downloadXLSX(){
   showToast('Downloaded!');
 }
 
-function copyText(text){navigator.clipboard.writeText(text).then(()=>showToast('Copied!'));}
-
-function showToast(msg){
-  const t=document.getElementById('toast');t.textContent=msg+' \u2713';t.classList.add('show');
-  setTimeout(()=>t.classList.remove('show'),2500);
-}
-
-function showError(msg){const p=document.getElementById('errorPanel');p.textContent='\u26A0 '+msg;p.classList.add('active');}
+function copyText(text){ navigator.clipboard.writeText(text).then(()=>showToast('Copied!')); }
+function showToast(msg){ const t=document.getElementById('toast'); t.textContent=msg+' \u2713'; t.classList.add('show'); setTimeout(()=>t.classList.remove('show'),2500); }
+function showError(msg){ const p=document.getElementById('errorPanel'); p.textContent='\u26A0 '+msg; p.classList.add('active'); }
 
 function reset(){
   document.getElementById('resultsPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='block';
-  document.getElementById('commodityInput').value='';
-  document.getElementById('senderEmail').value='';
-  document.getElementById('senderName').value='';
-  document.getElementById('senderTitle').value='';
-  document.getElementById('senderCompany').value='';
-  document.getElementById('certInput').value='';
-  document.getElementById('countryInput').value='';
-  document.getElementById('htsInput').value='';
+  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput'].forEach(id=>document.getElementById(id).value='');
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
-  fitFilter='all'; supplierType='both'; currentSupplierType='both';
+  fitFilter='all'; supplierType='both'; currentSupplierType='both'; currentTariffData=null;
   document.querySelectorAll('#supplierTypePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#supplierTypePills .pill[data-val="both"]').classList.add('selected');
   currentCommodity=''; currentCerts=''; currentCountries=[];
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
-  // No country selected by default after reset
   document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.classList.remove('selected'));
   document.querySelectorAll('#sourceCheckboxes .source-check[data-val="ThomasNet"], #sourceCheckboxes .source-check[data-val="ImportYeti"], #sourceCheckboxes .source-check[data-val="Kompass"]').forEach(el=>el.classList.add('selected'));
   currentSources=[];
