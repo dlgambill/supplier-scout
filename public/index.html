@@ -19,8 +19,8 @@
   --tariff-loading-bg:rgba(255,255,255,0.03);
 }
 body { background:var(--bg); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; min-height:100vh; overflow-x:hidden; }
-body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:0; }
-.app { position:relative; z-index:1; max-width:900px; margin:0 auto; padding:28px 20px 80px; }
+body::before { content:''; position:fixed; inset:0; background-image:linear-gradient(rgba(232,160,32,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(232,160,32,0.025) 1px,transparent 1px); background-size:40px 40px; pointer-events:none; z-index:-1; }
+.app { position:relative; max-width:900px; margin:0 auto; padding:28px 20px 80px; }
 
 header { display:flex; align-items:flex-end; justify-content:space-between; border-bottom:1px solid var(--border); padding-bottom:18px; margin-bottom:36px; }
 .logo { display:flex; align-items:center; gap:10px; }
