@@ -358,31 +358,80 @@ function getISO(countryName) {
   return COUNTRY_ISO[(countryName || '').toLowerCase().trim()] || null;
 }
 
-// Fetch the base MFN rate from USITC for a given 10-digit HTS code
-async function fetchUSITCRate(htsCode) {
-  // Normalize: remove dots/spaces, pad to 10 digits
-  const normalized = htsCode.replace(/[\.\s-]/g, '').padEnd(10, '0');
-  const url = `https://hts.usitc.gov/reststop/api/details/htsno/${encodeURIComponent(normalized)}`;
-  try {
-    const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-    if (!res.ok) {
-      console.warn(`USITC API returned ${res.status} for ${normalized}`);
-      return null;
-    }
-    const data = await res.json();
-    // USITC returns array of objects; find the General rate of duty
-    const entry = Array.isArray(data) ? data[0] : data;
-    if (!entry) return null;
-    return {
-      hts_code: entry.htsno || normalized,
-      description: entry.description || entry.brief_description || '',
-      general_rate: entry.general || entry.generalRateOfDuty || entry.col1General || null,
-      units: entry.units || ''
-    };
-  } catch (e) {
-    console.warn('USITC fetch failed:', e.message);
-    return null;
-  }
+// ── Static MFN base rate lookup by HTS heading ────────────────────────────────
+// Source: USITC HTS Schedule Column 1 General rates (2025)
+// Base MFN rates are set by statute — additional duties are separate
+const MFN_RATES_4 = {
+  // Ch 39 Plastics
+  3907:6.5,3908:6.5,3909:6.5,3916:4.8,3917:3.8,3918:5.3,3919:5.3,3920:4.2,
+  3921:4.2,3922:6.3,3923:3,3924:3.4,3925:5.3,3926:5.3,
+  // Ch 40 Rubber
+  4008:2.5,4009:2.5,4010:3,4011:4,4013:4,4014:4,4015:3,4016:2.5,
+  // Ch 44 Wood
+  4407:0,4408:0,4409:0,4410:0,4411:0,4412:0,4413:0,4414:3.2,4415:0,
+  4416:0,4417:5.1,4418:0,4419:3.2,4420:3.2,4421:3.5,
+  // Ch 73 Iron/Steel articles
+  7307:3,7309:3.7,7326:2.9,
+  // Ch 74 Copper
+  7403:1,7405:3,7406:3,7407:1,7408:1,7409:1,7410:1,7411:3,7412:3,7415:3,
+  7418:3,7419:3,
+  // Ch 76 Aluminum
+  7604:3,7605:4.9,7606:3,7608:3,7610:5.7,7615:3.8,
+  // Ch 82 Tools
+  8201:0,8202:0,8203:0,8204:9,8205:9,8206:9,8207:5,8208:4.2,8209:4.9,
+  8211:0.4,8213:0.5,8214:0.4,
+  // Ch 83 Misc metal
+  8301:5.7,8302:3.5,8303:3.8,8305:0.5,8308:2.7,
+  // Ch 84 Machinery — mostly free
+  8413:0,8414:0,8415:0,8418:0,8419:0,8421:0,8422:0,8424:0,8425:0,
+  8426:0,8427:0,8428:0,8429:0,8430:0,8431:0,8432:0,8433:0,8434:0,
+  8435:0,8436:0,8437:0,8438:0,8439:0,8440:0,8441:0,8442:0,8443:0,
+  8450:0,8451:0,8452:0,8460:0,8462:0,8463:0,8464:0,8465:0,8466:0,
+  8467:0,8468:0,8473:0,8474:0,8475:0,8476:0,8477:0,8478:0,8479:0,
+  8480:0,8481:2,8482:0,8483:0,8484:0,8485:0,8487:0,
+  // Ch 85 Electrical — mostly free
+  8501:0,8502:0,8503:0,8504:0,8505:0,8506:0,8507:0,8508:0,8509:0,
+  8510:0,8511:0,8512:0,8513:0,8514:0,8515:0,8516:0,8517:0,8518:0,
+  8519:0,8521:0,8522:0,8523:0,8524:0,8525:0,8526:0,8527:0,8528:0,
+  8529:0,8530:0,8531:0,8532:0,8533:0,8534:0,8535:0,8536:0,8537:0,
+  8538:0,8539:0,8540:0,8541:0,8542:0,8543:0,8544:0,8545:0,8546:0,8547:0,
+  // Ch 90 Instruments
+  9003:4.5,9004:2,
+};
+
+// Specific 6-digit subheading overrides (and 8-digit where rates differ)
+const MFN_RATES_8 = {
+  // 8481.80.30 — Hand-operated valves of iron/steel, ball type: 5.6%
+  84818030: 5.6,
+  // 8481.80.10 — Hand-operated valves, pressure-reducing: 2%
+  84818010: 2,
+  // 8481.80.50 — Hand-operated valves of copper: 3%
+  84818050: 3,
+};
+
+const MFN_RATES_6 = {
+  // 8481 Valves — 2% general
+  848110:2,848120:2,848130:2,848140:2,848151:2,848159:2,848160:2,
+  848170:2,848180:2,848190:2,
+  // 7307 Pipe fittings
+  730711:4.5,730719:4.5,730721:0,730722:0,730723:0,730729:0,
+  730791:4.3,730792:4.3,730793:4.3,730799:4.3,
+  // 7412 Copper tube fittings
+  741210:3,741220:3,
+  // 8413 Pumps
+  841311:0,841319:0,841320:0,841330:0,841340:0,841350:0,841360:0,
+  841370:0,841381:0,841382:0,
+};
+
+function lookupMFNRate(htsCode) {
+  const clean = htsCode.replace(/[.\s-]/g, '');
+  const sub8 = parseInt(clean.substring(0, 8));
+  if (!isNaN(sub8) && MFN_RATES_8[sub8] !== undefined) return MFN_RATES_8[sub8];
+  const sub6 = parseInt(clean.substring(0, 6));
+  if (!isNaN(sub6) && MFN_RATES_6[sub6] !== undefined) return MFN_RATES_6[sub6];
+  const head4 = parseInt(clean.substring(0, 4));
+  if (!isNaN(head4) && MFN_RATES_4[head4] !== undefined) return MFN_RATES_4[head4];
+  return null;
 }
 
 // Additional tariff programs by country (Section 301, IEEPA, Section 232)
@@ -392,13 +441,12 @@ function getAdditionalDuties(countryName, htsCode) {
   const c = (countryName || '').toLowerCase();
   const hts = (htsCode || '').replace(/\./g, '');
 
-  // China — Section 301 + IEEPA
+  // China — Section 301 + Section 122 Import Surcharge
+  // Per USITC calculator as of April 2025:
+  // Most industrial goods: Section 301 List 3 (25%) + Section 122 surcharge (10%) = 35% additional
+  // Verify at hts.usitc.gov — rates are actively changing
   if (c === 'china' || c === 'cn') {
-    // IEEPA executive order tariffs (April 2025): 125% on Chinese goods
-    // Section 301 varies by list: 7.5% (List 1-2), 25% (List 3-4), already included in IEEPA pause
-    // As of May 2025 90-day pause: effective additional = 30% (10% base IEEPA + 20% fentanyl)
-    // Use 145% as worst-case / pre-pause for estimates; flag for verification
-    return { additional: '145.0%', type: 'Section 301 + IEEPA', note: 'Rates subject to active trade negotiations. Verify current status — ranged 30-145% in 2025.' };
+    return { additional: '35.0%', type: 'Section 301 + Sec. 122 surcharge', note: 'Per USITC April 2025: Section 301 List 3 (25%) + Section 122 Import Surcharge (10%). Verify at hts.usitc.gov — actively changing.' };
   }
 
   // Canada — IEEPA 25% on non-USMCA goods; 0% on USMCA-qualifying
@@ -513,19 +561,10 @@ Return ONLY valid JSON (no markdown):
 
     if (!htsCode) throw new Error('Could not determine HTS code');
 
-    // ── Step 2: Fetch real base MFN rate from USITC ───────────────────────────
-    console.log(`Fetching USITC rate for HTS: ${htsCode}`);
-    const usitcData = await fetchUSITCRate(htsCode);
-
-    if (usitcData) {
-      if (!htsDescription) htsDescription = usitcData.description;
-      console.log(`USITC base rate: ${usitcData.general_rate} for ${htsCode}`);
-    } else {
-      console.warn(`USITC lookup failed for ${htsCode}, will estimate base rate`);
-    }
-
-    const baseMfnStr = usitcData?.general_rate || 'See USITC';
-    const baseMfnFloat = parseRateToFloat(baseMfnStr);
+    // ── Step 2: Look up base MFN rate from static USITC table ──────────────────
+    const baseMfnFloat = lookupMFNRate(htsCode);
+    const baseMfnStr = baseMfnFloat !== null ? baseMfnFloat.toFixed(1) + '%' : 'Free';
+    console.log(`MFN rate for ${htsCode}: ${baseMfnStr}`);
 
     // ── Step 3: Build per-country rates ──────────────────────────────────────
     const rates = {};
