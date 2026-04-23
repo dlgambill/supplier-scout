@@ -844,39 +844,31 @@ function buildTariffBadgeHTML(supplier) {
     || locationUpper.includes(', USA');
 
   if (isUS) {
-    return `<div class="tariff-col">
-      <div class="tariff-badge domestic">
-        <div class="tb-country">US Supplier</div>
-        <div class="tb-rate">No Duty</div>
-        <div class="tb-hts">Domestic</div>
-      </div>
-    </div>`;
+    return {
+      col: `<div class="tariff-col"><div class="tariff-badge domestic"><div class="tb-country">US Supplier</div><div class="tb-rate">No Duty</div><div class="tb-hts">Domestic</div></div></div>`,
+      detail: ''
+    };
   }
 
   const tariff = getTariffForSupplier(supplier);
-  if (!tariff) return '<div class="tariff-col"></div>';
+  if (!tariff) return { col: '<div class="tariff-col"></div>', detail: '' };
 
   const htsCode = currentTariffData.hts_code || '';
   const assumed = currentTariffData.assumed;
   const badgeClass = assumed ? 'tariff-badge assumed' : 'tariff-badge';
   const country = extractCountryFromLocation(supplier.location) || tariff.country;
 
-  const detailHTML = `<div class="tariff-detail">
+  const detail = `<div class="tariff-detail">
     <div><div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;color:var(--text3)">Base MFN</div><span>${tariff.base_mfn || '—'}</span></div>
     <div><div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;color:var(--text3)">${tariff.additional_type || 'Additional'}</div><span class="td-add">${tariff.additional_duties && tariff.additional_duties !== '0%' ? tariff.additional_duties : 'None'}</span></div>
     <div><div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;margin-bottom:2px;color:var(--text3)">Total Rate</div><span class="td-total">${tariff.total_rate || '—'}</span></div>
     ${tariff.notes ? `<div style="flex-basis:100%;font-size:10px;color:var(--text3);font-style:italic;margin-top:2px;">${tariff.notes}</div>` : ''}
-    <div style="flex-basis:100%;font-size:9px;color:var(--text3);margin-top:2px;">HTS ${htsCode}${assumed?' — inferred, verify with customs broker':''}</div>
+    <div style="flex-basis:100%;font-size:9px;color:var(--text3);margin-top:2px;">HTS ${htsCode}${assumed ? ' — inferred, verify with customs broker' : ''}</div>
   </div>`;
 
-  return `<div class="tariff-col" data-tariff-detail="${supplier.id}">
-    <div class="${badgeClass}">
-      <div class="tb-country">US Duty · ${country}</div>
-      <div class="tb-rate">${tariff.total_rate || '—'}</div>
-      <div class="tb-hts">${htsCode}${assumed?' (inferred)':''}</div>
-    </div>
-  </div>
-  <script type="text/tariff-detail" data-id="${supplier.id}">${encodeURIComponent(detailHTML)}</script>`
+  const col = `<div class="tariff-col"><div class="${badgeClass}"><div class="tb-country">US Duty · ${country}</div><div class="tb-rate">${tariff.total_rate || '—'}</div><div class="tb-hts">${htsCode}${assumed ? ' (inferred)' : ''}</div></div></div>`;
+
+  return { col, detail };
 }
 
 function buildSearchQuery(){
@@ -937,17 +929,7 @@ function renderSupplierCards(){
     const verifyBtn='<div style="margin-top:8px;"><a href="'+verifyUrl+'" target="_blank" onclick="event.stopPropagation()" class="btn-verify">&#128269; Verify on Google</a></div>';
 
     // Tariff badge — own column + detail for expand
-    const tariffRaw = buildTariffBadgeHTML(s);
-
-    // Extract the encoded tariff detail from the script tag
-    const tempDiv2 = document.createElement('div');
-    tempDiv2.innerHTML = tariffRaw;
-    const detailScript = tempDiv2.querySelector('script[type="text/tariff-detail"]');
-    const tariffDetailHTML = detailScript ? decodeURIComponent(detailScript.getAttribute('data-id') ? '' : '') : '';
-    // Actually decode from the script content
-    const tariffDetailDecoded = detailScript ? decodeURIComponent(detailScript.textContent.trim()) : '';
-    if (detailScript) detailScript.remove();
-    const cleanTariffCol = tempDiv2.innerHTML;
+    const tariff = buildTariffBadgeHTML(s);
 
     d.innerHTML=
       '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
@@ -960,12 +942,12 @@ function renderSupplierCards(){
         +'<div class="card-expand">'
           +'<p>'+s.specialty+'</p>'
           +'<p class="note">'+s.fitReason+'</p>'
-          +tariffDetailDecoded
+          +tariff.detail
           +websiteHtml
           +sourceHtml
         +'</div>'
       +'</div>'
-      +cleanTariffCol
+      +tariff.col
       +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
 
     d.querySelector('.card-body').addEventListener('click', e => {
