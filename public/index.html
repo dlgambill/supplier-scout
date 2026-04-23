@@ -168,7 +168,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.0.1</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.0.0</div>
   </header>
 
   <div id="inputPanel">
@@ -279,10 +279,14 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
         <label>Your email address <span style="color:var(--text3)">(used to open each outreach email)</span></label>
         <input type="text" id="senderEmail" placeholder="you@yourcompany.com" />
       </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;">
         <div class="input-block" style="margin-bottom:0;">
           <label>Your name</label>
           <input type="text" id="senderName" placeholder="Jane Smith" />
+        </div>
+        <div class="input-block" style="margin-bottom:0;">
+          <label>Your title</label>
+          <input type="text" id="senderTitle" placeholder="Sourcing Manager" />
         </div>
         <div class="input-block" style="margin-bottom:0;">
           <label>Your company</label>
@@ -837,10 +841,12 @@ function renderEmailCards(){
     d.className='email-card';
     // Personalize subject and body with supplier name
     const senderName=document.getElementById('senderName').value.trim()||'[Your Name]';
+    const senderTitle=document.getElementById('senderTitle').value.trim()||'[Your Title]';
     const senderCompany=document.getElementById('senderCompany').value.trim()||'[Your Company]';
     const personalizedBody=(template.body||'')
       .replace(/\[SUPPLIER_NAME\]/g,s.name)
       .replace(/\[Your Name\]/g,senderName)
+      .replace(/\[Your Title\]/g,senderTitle)
       .replace(/\[Your Company Name\]/g,senderCompany)
       .replace(/\[Your Company\]/g,senderCompany)
       .replace(/\[Company Name\]/g,senderCompany);
@@ -952,6 +958,7 @@ function reset(){
   document.getElementById('commodityInput').value='';
   document.getElementById('senderEmail').value='';
   document.getElementById('senderName').value='';
+  document.getElementById('senderTitle').value='';
   document.getElementById('senderCompany').value='';
   document.getElementById('certInput').value='';
   document.getElementById('countryInput').value='';
