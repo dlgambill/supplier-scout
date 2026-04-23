@@ -708,7 +708,11 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       : null;
 
     currentTariffData = tariffResult;
+    console.log('inferredForeign:', inferredForeign);
     console.log('currentTariffData:', JSON.stringify(currentTariffData));
+    if (currentTariffData?.rates) {
+      console.log('Rate keys available:', Object.keys(currentTariffData.rates));
+    }
 
     if(isFirst){
       suppliers=newSuppliers;
