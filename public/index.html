@@ -235,6 +235,15 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
     </div>
 
     <div class="input-block">
+      <label>Supplier type</label>
+      <div class="pill-group" id="supplierTypePills">
+        <div class="pill" data-val="manufacturers">Manufacturers Only</div>
+        <div class="pill" data-val="distributors">Distributors Only</div>
+        <div class="pill selected" data-val="both">Both</div>
+      </div>
+    </div>
+
+    <div class="input-block">
       <label>Certifications required <span style="color:var(--text3)">(comma separated, e.g. ISO 9001, AS9100, RoHS)</span></label>
       <input type="text" id="certInput" placeholder="ISO 9001, AS9100, IATF 16949, RoHS..." />
     </div>
@@ -386,15 +395,22 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all';
+let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both';
 let pastedImageData=null, pastedImageType=null;
-let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[];
+let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 
 const STEPS={
   domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
   foreign:["Running live Google searches","Scanning international trade directories","Extracting & verifying companies","Scoring supplier fit"],
   both:["Running live Google searches","Scanning domestic & international directories","Extracting & verifying companies","Scoring supplier fit"]
 };
+
+// Supplier type pills
+document.querySelectorAll('#supplierTypePills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#supplierTypePills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected');
+  supplierType=p.dataset.val;
+}));
 
 // Source checkboxes
 document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.addEventListener('click',()=>{
@@ -525,7 +541,7 @@ function parseClaudeJSON(data) {
 }
 
 async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType){
-  const body={commodity, scope, certs, countries, hts, sources:currentSources, selectedCountries:currentCountries, imageData:imageData||null, imageType:imageType||null};
+  const body={commodity, scope, certs, countries, hts, sources:currentSources, selectedCountries:currentCountries, supplierType:currentSupplierType, imageData:imageData||null, imageType:imageType||null};
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
@@ -563,6 +579,7 @@ async function runSearch(){
   currentCountries=getSelectedCountries();
   currentHts=hts;
   currentSources=[...document.querySelectorAll('#sourceCheckboxes .source-check.selected')].map(el=>el.dataset.val);
+  currentSupplierType=supplierType;
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
   const scope=getScopeFromCountries(currentCountries);
@@ -940,7 +957,9 @@ function reset(){
   document.getElementById('htsInput').value='';
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
-  fitFilter='all';
+  fitFilter='all'; supplierType='both'; currentSupplierType='both';
+  document.querySelectorAll('#supplierTypePills .pill').forEach(p=>p.classList.remove('selected'));
+  document.querySelector('#supplierTypePills .pill[data-val="both"]').classList.add('selected');
   currentCommodity=''; currentCerts=''; currentCountries=[];
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
   // No country selected by default after reset
