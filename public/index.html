@@ -880,7 +880,7 @@ function buildTariffBadgeHTML(supplier) {
     <div style="flex-basis:100%;font-size:9px;color:var(--text3);margin-top:2px;">HTS ${htsCode}${assumed ? ' — inferred, verify with customs broker' : ''}</div>
   </div>`;
 
-  const col = `<div class="tariff-col"><div class="${badgeClass}"><div class="tb-country">US Duty · ${country}</div><div class="tb-rate">${tariff.total_rate || '—'}</div><div class="tb-hts">${htsCode}${assumed ? ' (inferred)' : ''}</div></div></div>`;
+  const col = `<div class="tariff-col"><div class="${badgeClass}"><div class="tb-country">US Duty · ${country}</div><div class="tb-rate">${tariff.total_rate || '—'}</div><div class="tb-hts">${htsCode}${assumed ? ' (inferred)' : ''}</div><div class="tb-hts" style="opacity:0.45;margin-top:2px;">via USITC</div></div></div>`;
 
   return { col, detail };
 }
