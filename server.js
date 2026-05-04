@@ -38,31 +38,6 @@ function parseJSON(text) {
   return JSON.parse(text.slice(start, end + 1));
 }
 
-// ── HTS/Tariff daily cache (in-memory — swap getHTSCache/setHTSCache for DB calls) ──
-const _htsCache = new Map();
-
-function todayKey() {
-  return new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-}
-
-function getHTSCache(cacheKey) {
-  // TODO: replace with DB lookup — SELECT * FROM hts_cache WHERE cache_key=? AND cache_date=TODAY
-  const entry = _htsCache.get(cacheKey);
-  if (!entry) return null;
-  if (entry.date !== todayKey()) { _htsCache.delete(cacheKey); return null; }
-  return entry.data;
-}
-
-function setHTSCache(cacheKey, data) {
-  // TODO: replace with DB upsert — INSERT OR REPLACE INTO hts_cache (cache_key, cache_date, data)
-  _htsCache.set(cacheKey, { date: todayKey(), data });
-}
-
-function buildHTSCacheKey(commodity, htsOverride) {
-  const base = (commodity + '|' + (htsOverride || 'auto')).toLowerCase().replace(/\s+/g, '_').replace(/[^a-z0-9_|.]/g, '');
-  return 'hts_' + base.substring(0, 120);
-}
-
 // ── Geography filter ──────────────────────────────────────────────────────
 const US_STATES = new Set([
   'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA',
@@ -256,54 +231,6 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
   return text;
 }
 
-// ── Gemini call WITH Google Search grounding (for live tariff lookups) ──
-async function callGeminiJSON(prompt, geminiKey) {
-  for (const model of GEMINI_MODELS) {
-    try {
-      // First attempt: with Google Search grounding for live/accurate tariff data
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: 'You are a US customs and trade compliance expert with access to current tariff data. Use Google Search to find the most current US import duty rates. Return only valid JSON with no markdown or preamble.' }] },
-            contents: [{ parts: [{ text: prompt }] }],
-            tools: [{ googleSearch: {} }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
-          })
-        }
-      );
-      if (!res.ok) { const e = await res.text(); throw new Error(`Gemini ${res.status}: ${e.substring(0,200)}`); }
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
-      if (text) { console.log(`HTS tariff lookup via ${model} with search succeeded`); return text; }
-
-      // Fallback: without search tool if grounded call returned empty
-      console.warn(`${model} grounded call empty, retrying without search tool...`);
-      const res2 = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            system_instruction: { parts: [{ text: 'You are a US customs and trade compliance expert. Return only valid JSON. No markdown. No preamble.' }] },
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.1, maxOutputTokens: 4096 }
-          })
-        }
-      );
-      const data2 = await res2.json();
-      const text2 = data2?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
-      if (text2) return text2;
-      throw new Error('Empty response from both attempts');
-    } catch (err) {
-      console.warn(`callGeminiJSON ${model} failed: ${err.message}`);
-    }
-  }
-  throw new Error('All Gemini models failed for tariff lookup');
-}
-
 // ── Claude fallback ────────────────────────────────────────────────────────
 async function callClaude(prompt, anthropicKey, expectArray = true) {
   const system = expectArray
@@ -337,291 +264,6 @@ function cleanCommodity(commodity) {
     .replace(/\s{2,}/g, ' ').trim().replace(/^,|,$/g, '').trim();
 }
 
-// ── USITC HTS API helpers ────────────────────────────────────────────────────
-
-// Country ISO codes for USITC API
-const COUNTRY_ISO = {
-  'china': 'CN', 'taiwan': 'TW', 'india': 'IN', 'mexico': 'MX', 'canada': 'CA',
-  'germany': 'DE', 'japan': 'JP', 'south korea': 'KR', 'korea': 'KR',
-  'united kingdom': 'GB', 'uk': 'GB', 'vietnam': 'VN', 'italy': 'IT',
-  'france': 'FR', 'ireland': 'IE', 'switzerland': 'CH', 'netherlands': 'NL',
-  'malaysia': 'MY', 'thailand': 'TH', 'brazil': 'BR', 'belgium': 'BE',
-  'singapore': 'SG', 'australia': 'AU', 'indonesia': 'ID', 'israel': 'IL',
-  'spain': 'ES', 'austria': 'AT', 'cambodia': 'KH', 'poland': 'PL',
-  'czech republic': 'CZ', 'sweden': 'SE', 'denmark': 'DK', 'finland': 'FI',
-  'norway': 'NO', 'hungary': 'HU', 'romania': 'RO', 'turkey': 'TR',
-  'ukraine': 'UA', 'russia': 'RU', 'hong kong': 'HK', 'uae': 'AE',
-  'bangladesh': 'BD', 'pakistan': 'PK', 'sri lanka': 'LK', 'ethiopia': 'ET'
-};
-
-function getISO(countryName) {
-  return COUNTRY_ISO[(countryName || '').toLowerCase().trim()] || null;
-}
-
-// ── Static MFN base rate lookup by HTS heading ────────────────────────────────
-// Source: USITC HTS Schedule Column 1 General rates (2025)
-// Base MFN rates are set by statute — additional duties are separate
-const MFN_RATES_4 = {
-  // Ch 39 Plastics
-  3907:6.5,3908:6.5,3909:6.5,3916:4.8,3917:3.8,3918:5.3,3919:5.3,3920:4.2,
-  3921:4.2,3922:6.3,3923:3,3924:3.4,3925:5.3,3926:5.3,
-  // Ch 40 Rubber
-  4008:2.5,4009:2.5,4010:3,4011:4,4013:4,4014:4,4015:3,4016:2.5,
-  // Ch 44 Wood
-  4407:0,4408:0,4409:0,4410:0,4411:0,4412:0,4413:0,4414:3.2,4415:0,
-  4416:0,4417:5.1,4418:0,4419:3.2,4420:3.2,4421:3.5,
-  // Ch 73 Iron/Steel articles
-  7307:3,7309:3.7,7326:2.9,
-  // Ch 74 Copper
-  7403:1,7405:3,7406:3,7407:1,7408:1,7409:1,7410:1,7411:3,7412:3,7415:3,
-  7418:3,7419:3,
-  // Ch 76 Aluminum
-  7604:3,7605:4.9,7606:3,7608:3,7610:5.7,7615:3.8,
-  // Ch 82 Tools
-  8201:0,8202:0,8203:0,8204:9,8205:9,8206:9,8207:5,8208:4.2,8209:4.9,
-  8211:0.4,8213:0.5,8214:0.4,
-  // Ch 83 Misc metal
-  8301:5.7,8302:3.5,8303:3.8,8305:0.5,8308:2.7,
-  // Ch 84 Machinery — mostly free
-  8413:0,8414:0,8415:0,8418:0,8419:0,8421:0,8422:0,8424:0,8425:0,
-  8426:0,8427:0,8428:0,8429:0,8430:0,8431:0,8432:0,8433:0,8434:0,
-  8435:0,8436:0,8437:0,8438:0,8439:0,8440:0,8441:0,8442:0,8443:0,
-  8450:0,8451:0,8452:0,8460:0,8462:0,8463:0,8464:0,8465:0,8466:0,
-  8467:0,8468:0,8473:0,8474:0,8475:0,8476:0,8477:0,8478:0,8479:0,
-  8480:0,8481:2,8482:0,8483:0,8484:0,8485:0,8487:0,
-  // Ch 85 Electrical — mostly free
-  8501:0,8502:0,8503:0,8504:0,8505:0,8506:0,8507:0,8508:0,8509:0,
-  8510:0,8511:0,8512:0,8513:0,8514:0,8515:0,8516:0,8517:0,8518:0,
-  8519:0,8521:0,8522:0,8523:0,8524:0,8525:0,8526:0,8527:0,8528:0,
-  8529:0,8530:0,8531:0,8532:0,8533:0,8534:0,8535:0,8536:0,8537:0,
-  8538:0,8539:0,8540:0,8541:0,8542:0,8543:0,8544:0,8545:0,8546:0,8547:0,
-  // Ch 90 Instruments
-  9003:4.5,9004:2,
-};
-
-// Specific 6-digit subheading overrides (and 8-digit where rates differ)
-const MFN_RATES_8 = {
-  // 8481.80.30 — Hand-operated valves of iron/steel, ball type: 5.6%
-  84818030: 5.6,
-  // 8481.80.10 — Hand-operated valves, pressure-reducing: 2%
-  84818010: 2,
-  // 8481.80.50 — Hand-operated valves of copper: 3%
-  84818050: 3,
-};
-
-const MFN_RATES_6 = {
-  // 8481 Valves — 2% general
-  848110:2,848120:2,848130:2,848140:2,848151:2,848159:2,848160:2,
-  848170:2,848180:2,848190:2,
-  // 7307 Pipe fittings
-  730711:4.5,730719:4.5,730721:0,730722:0,730723:0,730729:0,
-  730791:4.3,730792:4.3,730793:4.3,730799:4.3,
-  // 7412 Copper tube fittings
-  741210:3,741220:3,
-  // 8413 Pumps
-  841311:0,841319:0,841320:0,841330:0,841340:0,841350:0,841360:0,
-  841370:0,841381:0,841382:0,
-};
-
-function lookupMFNRate(htsCode) {
-  const clean = htsCode.replace(/[.\s-]/g, '');
-  if (clean.length < 8) {
-    console.warn(`HTS code "${htsCode}" has fewer than 8 digits — accuracy may be reduced. Use full 10-digit code for best results.`);
-  }
-  const sub8 = parseInt(clean.substring(0, 8));
-  if (!isNaN(sub8) && MFN_RATES_8[sub8] !== undefined) return MFN_RATES_8[sub8];
-  const sub6 = parseInt(clean.substring(0, 6));
-  if (!isNaN(sub6) && MFN_RATES_6[sub6] !== undefined) return MFN_RATES_6[sub6];
-  const head4 = parseInt(clean.substring(0, 4));
-  if (!isNaN(head4) && MFN_RATES_4[head4] !== undefined) return MFN_RATES_4[head4];
-  return null;
-}
-
-// Additional tariff programs by country (Section 301, IEEPA, Section 232)
-// These are layered ON TOP of the MFN base rate
-// Updated April 2025 — always verify with CBP/customs broker
-function getAdditionalDuties(countryName, htsCode) {
-  const c = (countryName || '').toLowerCase();
-  const hts = (htsCode || '').replace(/\./g, '');
-
-  // China — Section 301 + Section 122 Import Surcharge
-  // Per USITC calculator as of April 2025:
-  // Most industrial goods: Section 301 List 3 (25%) + Section 122 surcharge (10%) = 35% additional
-  // Verify at hts.usitc.gov — rates are actively changing
-  if (c === 'china' || c === 'cn') {
-    return { additional: '35.0%', type: 'Section 301 + Sec. 122 surcharge', note: 'Per USITC April 2025: Section 301 List 3 (25%) + Section 122 Import Surcharge (10%). Verify at hts.usitc.gov — actively changing.' };
-  }
-
-  // Canada — IEEPA 25% on non-USMCA goods; 0% on USMCA-qualifying
-  if (c === 'canada' || c === 'ca') {
-    return { additional: '25.0%', type: 'IEEPA (non-USMCA)', note: 'USMCA-qualifying goods: 0% additional. Non-qualifying: 25% IEEPA tariff.' };
-  }
-
-  // Mexico — IEEPA 25% on non-USMCA goods
-  if (c === 'mexico' || c === 'mx') {
-    return { additional: '25.0%', type: 'IEEPA (non-USMCA)', note: 'USMCA-qualifying goods: 0% additional. Non-qualifying: 25% IEEPA tariff.' };
-  }
-
-  // India — IEEPA 26% reciprocal tariff (paused 90 days from April 2025, 10% floor in effect)
-  if (c === 'india' || c === 'in') {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // Vietnam — IEEPA 46% paused to 10%
-  if (c === 'vietnam' || c === 'vn') {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // EU countries — IEEPA 20% paused to 10%
-  const eu = ['germany','de','france','fr','italy','it','spain','es','netherlands','nl',
-    'belgium','be','austria','at','ireland','ie','poland','pl','sweden','se',
-    'denmark','dk','finland','fi','czech republic','cz','hungary','hu','romania','ro'];
-  if (eu.includes(c)) {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'EU reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // Taiwan — IEEPA 32% paused to 10%
-  if (c === 'taiwan' || c === 'tw') {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // Japan — IEEPA 24% paused to 10%
-  if (c === 'japan' || c === 'jp') {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // South Korea — IEEPA 25% paused to 10%
-  if (c === 'south korea' || c === 'korea' || c === 'kr') {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // Malaysia, Thailand, Indonesia, Cambodia — IEEPA varying, paused to 10%
-  const sea = ['malaysia','my','thailand','th','indonesia','id','cambodia','kh','singapore','sg'];
-  if (sea.includes(c)) {
-    return { additional: '10.0%', type: 'IEEPA (90-day pause)', note: 'Reciprocal tariff paused to 10% through ~July 2025. Verify current status.' };
-  }
-
-  // Default — 10% universal baseline IEEPA
-  return { additional: '10.0%', type: 'IEEPA baseline', note: 'Universal 10% baseline tariff applies. Verify if higher rate is paused.' };
-}
-
-function parseRateToFloat(rateStr) {
-  if (!rateStr) return 0;
-  const match = String(rateStr).match(/([\d.]+)%/);
-  return match ? parseFloat(match[1]) : 0;
-}
-
-// ── /api/hts-tariff — real USITC rates + structured additional duties ─────────
-app.post('/api/hts-tariff', async (req, res) => {
-  const geminiKey    = process.env.GEMINI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
-
-  if (!geminiKey && !anthropicKey) {
-    return res.status(500).json({ error: 'No API keys configured' });
-  }
-
-  try {
-    const { commodity, htsOverride, countries } = req.body;
-    if (!commodity && !htsOverride) {
-      return res.status(400).json({ error: 'commodity or htsOverride required' });
-    }
-
-    const countryList = [...new Set((countries || []).filter(c => c && c !== 'USA' && c !== 'United States'))];
-    const ck = buildHTSCacheKey(commodity || '', htsOverride || '');
-    const cached = getHTSCache(ck);
-    if (cached) {
-      console.log('HTS cache hit:', ck);
-      return res.json({ ...cached, cached: true });
-    }
-
-    // ── Step 1: Get HTS code — use override or infer via AI ──────────────────
-    let htsCode = htsOverride || null;
-    let htsDescription = '';
-    let assumed = !htsCode;
-    let reasoning = '';
-
-    if (!htsCode) {
-      // Ask AI to classify the product
-      const classifyPrompt = `Classify this product under the US Harmonized Tariff Schedule (HTS).
-Product: "${commodity}"
-Return ONLY valid JSON (no markdown):
-{"hts_code":"NNNN.NN.NNNN","description":"official brief description","reasoning":"one sentence"}`;
-
-      let classifyText;
-      if (geminiKey) {
-        try { classifyText = await callGeminiJSON(classifyPrompt, geminiKey); } catch(e) { classifyText = null; }
-      }
-      if (!classifyText && anthropicKey) {
-        classifyText = await callClaude(classifyPrompt, anthropicKey, false);
-      }
-      if (classifyText) {
-        const parsed = parseJSON(classifyText);
-        htsCode = parsed.hts_code || '';
-        htsDescription = parsed.description || '';
-        reasoning = parsed.reasoning || '';
-      }
-    }
-
-    if (!htsCode) throw new Error('Could not determine HTS code');
-
-    // ── Step 2: Look up base MFN rate from static USITC table ──────────────────
-    let baseMfnFloat = lookupMFNRate(htsCode);
-
-    // If HTS not in static table, ask AI for just the base MFN rate
-    if (baseMfnFloat === null) {
-      console.log(`HTS ${htsCode} not in static table, asking AI for base MFN rate...`);
-      try {
-        const mfnPrompt = `What is the US MFN (Column 1 General) base duty rate for HTS code ${htsCode}? Return ONLY valid JSON: {"base_mfn_rate": X.X, "description": "brief description"} where base_mfn_rate is a number like 2.0 or 0 for free.`;
-        let mfnText;
-        if (geminiKey) { try { mfnText = await callGeminiJSON(mfnPrompt, geminiKey); } catch(e) { mfnText = null; } }
-        if (!mfnText && anthropicKey) { mfnText = await callClaude(mfnPrompt, anthropicKey, false); }
-        if (mfnText) {
-          const mfnParsed = parseJSON(mfnText);
-          baseMfnFloat = parseFloat(mfnParsed.base_mfn_rate) || 0;
-          if (!htsDescription && mfnParsed.description) htsDescription = mfnParsed.description;
-        }
-      } catch(e) { console.warn('AI MFN fallback failed:', e.message); }
-      if (baseMfnFloat === null) baseMfnFloat = 0;
-    }
-
-    const baseMfnStr = baseMfnFloat.toFixed(1) + '%';
-    console.log(`MFN rate for ${htsCode}: ${baseMfnStr}`);
-
-    // ── Step 3: Build per-country rates ──────────────────────────────────────
-    const rates = {};
-    for (const country of countryList) {
-      const extra = getAdditionalDuties(country, htsCode);
-      const extraFloat = parseRateToFloat(extra.additional);
-      const totalFloat = baseMfnFloat + extraFloat;
-      const totalStr = totalFloat.toFixed(1) + '%';
-
-      rates[country] = {
-        total_rate: totalStr,
-        base_mfn: baseMfnStr,
-        additional_duties: extra.additional,
-        additional_type: extra.type,
-        notes: extra.note
-      };
-    }
-
-    const result = {
-      hts_code: htsCode,
-      hts_description: htsDescription,
-      assumed,
-      reasoning,
-      source: 'USITC HTS Schedule',
-      rates
-    };
-
-    setHTSCache(ck, result);
-    console.log(`HTS tariff complete: ${htsCode} (${assumed ? 'inferred' : 'confirmed'}) via ${result.source}`);
-    res.json({ ...result, cached: false });
-
-  } catch (err) {
-    console.error('HTS tariff error:', err);
-    res.status(500).json({ error: err.message });
-  }
-});
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
   const geminiKey   = process.env.GEMINI_API_KEY;
@@ -632,8 +274,10 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType } = req.body;
-    const cleanedCommodity = cleanCommodity(commodity);
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName } = req.body;
+    const cleanedCommodity = cleanCommodity(commodity || '');
+    const searchMode = (mode === 'company') ? 'company' : 'commodity';
+    const targetCompany = (companyName || '').trim();
 
     const countryList = selectedCountries && selectedCountries.length ? selectedCountries : [];
     const hasUSA = countryList.includes('USA');
@@ -659,11 +303,76 @@ app.post('/api/search', async (req, res) => {
       ? sources.map(s => `"${cleanedCommodity}" site:${s.toLowerCase().replace(/\s/g,'')}.com`).join(', ')
       : `"${cleanedCommodity}" site:thomasnet.com`;
 
-    const systemInstruction = `You are a Lead Sourcing & Procurement Analyst. You provide raw data in JSON format.
+    let systemInstruction;
+    let supplierPrompt;
+
+    if (searchMode === 'company') {
+      // ─── COMPANY SEARCH: find vendors/suppliers TO the named company ─────
+      if (!targetCompany) {
+        return res.status(400).json({ error: 'companyName is required for company search mode' });
+      }
+
+      systemInstruction = `You are a Supply Chain Intelligence Analyst. You provide raw data in JSON format.
+Your job is to identify the VENDORS and SUPPLIERS that sell to a target company — i.e., the companies that appear in the target's accounts payable, not the target's customers or competitors.
+No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
+
+      supplierPrompt = `[GOAL]
+Perform deep-web research using Google Search to identify verified vendors, suppliers, and contract manufacturers that sell to "${targetCompany}".
+
+[TARGET COMPANY]
+- Company Name: "${targetCompany}"
+- Required Certs: ${certText}
+- HTS Code (commodity hint): ${htsText}
+- Geography Scope: ${geoSelected}
+
+[RESEARCH PROTOCOL]
+1. EXECUTE SEARCH: Use the search tool to query sources that surface buyer/supplier relationships:
+   - "${targetCompany}" supplier
+   - "${targetCompany}" vendor
+   - "${targetCompany}" "supplied by" OR "manufactured by" OR "contract manufacturer"
+   - site:importyeti.com "${targetCompany}"
+   - site:panjiva.com "${targetCompany}"
+   - "${targetCompany}" 10-K supplier OR "principal suppliers"
+   - "${targetCompany}" press release partnership manufacturer
+   - "${targetCompany}" bill of lading OR shipment records
+2. SOURCE PRIORITY: Import/export records (ImportYeti, Panjiva, Datamyne), SEC filings (10-K, 10-Q "principal suppliers"), press releases announcing supply agreements, news articles naming specific vendors, and the target company's own supplier diversity / approved vendor pages.
+3. VALIDATE ENTITY: Identify the SPECIFIC supplier company name. Do NOT include the target company itself. Do NOT include the target's customers, competitors, or downstream resellers.
+4. EVIDENCE: For each supplier returned, the fitReason MUST cite the evidence (e.g., "Listed in ImportYeti as bill-of-lading consignor for ${targetCompany} 2023-2024" or "Named as contract manufacturer in 2024 press release").
+
+[OUTPUT RULES - ZERO TOLERANCE]
+- RETURN ONLY A JSON ARRAY.
+- NO MARKDOWN: Do not use \`\`\`json or any backticks. Start with [ and end with ].
+- NO PLACEHOLDERS: If you cannot find a specific supplier name with evidence, do not create an entry. Return [] rather than guess.
+- NO COMPETITORS: Do not list companies similar to ${targetCompany}. Only list its inputs/vendors.
+- TOKEN MANAGEMENT: Once you have identified 15 verified suppliers, stop searching immediately and generate the JSON output.
+
+[JSON SCHEMA]
+[
+  {
+    "id": 1,
+    "name": "Exact Legal Supplier Name",
+    "location": "City, ST or City, Country",
+    "website": "domain.com",
+    "source": "ImportYeti / Panjiva / SEC 10-K / Press Release / Web Search",
+    "specialty": "One sentence on what they supply to ${targetCompany}.",
+    "tags": ["component or service", "relationship type"],
+    "certs": [],
+    "fit": "high | medium | low",
+    "fitReason": "Cite the specific evidence linking this supplier to ${targetCompany}.",
+    "contactEmail": "",
+    "contactName": ""
+  }
+]
+
+${supplierTypeText} Begin JSON output now.`;
+
+    } else {
+      // ─── COMMODITY SEARCH: original flow ─────────────────────────────────
+      systemInstruction = `You are a Lead Sourcing & Procurement Analyst. You provide raw data in JSON format.
 CRITICAL: You are currently restricted to ${geoSelected} suppliers only. If a company is not headquartered or manufacturing in ${geoSelected}, it is a hard-fail; do not include it.
 No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
-    const supplierPrompt = `[GOAL]
+      supplierPrompt = `[GOAL]
 Perform deep-web research using Google Search to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
 
 [COMMODITY DATA]
@@ -704,6 +413,7 @@ Perform deep-web research using Google Search to identify verified ${geoSelected
 ]
 
 GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any companies outside ${geoSelected}. ${supplierTypeText} Begin JSON output now.`;
+    }
 
     let responseText;
     let usedGemini = false;
@@ -732,17 +442,24 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       suppliers = parseJSON(responseText);
       if (Array.isArray(suppliers)) {
         const before = suppliers.length;
-        suppliers = filterByScope(suppliers, scope, countries, selectedCountries);
+        // Geography filter is for commodity searches only.
+        // In company-search mode, real vendors can be anywhere — don't filter them out.
+        if (searchMode !== 'company') {
+          suppliers = filterByScope(suppliers, scope, countries, selectedCountries);
+        } else {
+          // Still strip junk entries
+          suppliers = suppliers.filter(s => s && s.name && !/search result|no specific company|not provided/i.test(s.name));
+        }
         if (supplierType && supplierType !== 'both') {
           suppliers = filterBySupplierType(suppliers, supplierType);
           console.log(`Supplier type filter (${supplierType}): ${suppliers.length} remaining`);
         }
-        console.log(`Geography filter: ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
+        console.log(`Filter (${searchMode} mode): ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
         suppliers.forEach((s, i) => s.id = i + 1);
       }
       responseText = JSON.stringify(suppliers);
     } catch(e) {
-      console.warn('Could not apply geography filter:', e.message);
+      console.warn('Could not apply filters:', e.message);
     }
 
     res.json({
