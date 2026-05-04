@@ -158,7 +158,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.0</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.1</div>
   </header>
 
   <div id="inputPanel">
@@ -200,7 +200,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       </div>
     </div>
 
-    <div class="input-block">
+    <div class="input-block" id="commodityCountriesBlock">
       <label>Source countries <span style="color:var(--text3)">(select all that apply)</span></label>
       <div style="display:flex;gap:6px;margin-bottom:8px;">
         <div class="source-check" onclick="selectAllCountries()" id="allCountriesBtn">&#127760; All Countries</div>
@@ -241,6 +241,19 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       </div>
     </div>
 
+    <div class="input-block" id="companyCountriesBlock" style="display:none;">
+      <label>Geography</label>
+      <div class="pill-group" id="companyGeoPills">
+        <div class="pill" data-val="domestic">Domestic Only</div>
+        <div class="pill" data-val="foreign">Foreign Only</div>
+        <div class="pill selected" data-val="both">Both</div>
+      </div>
+      <div style="margin-top:10px;">
+        <label style="font-size:11px;color:var(--text3);">Specific countries to focus on <span style="color:var(--text3)">(optional, comma separated)</span></label>
+        <input type="text" id="companyCountriesInput" placeholder="e.g. China, Mexico, Vietnam" style="margin-top:4px;" />
+      </div>
+    </div>
+
     <div class="input-block">
       <label>Supplier type</label>
       <div class="pill-group" id="supplierTypePills">
@@ -274,6 +287,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       </div>
     </div>
 
+    <div id="emailCampaignBlock">
     <div class="input-block">
       <div id="emailToggle" class="toggle-row on" onclick="toggleOpt('email')">
         <div class="toggle-check on">&#10003;</div>
@@ -310,6 +324,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
           <input type="text" id="attachInput" placeholder="e.g. spec sheet, engineering drawing, RFQ" />
         </div>
       </div>
+    </div>
     </div>
 
     <button class="btn-launch" onclick="runSearch()">
@@ -410,6 +425,7 @@ let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter=
 let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 let currentMode='commodity', currentCompanyName='';
+let currentCompanyGeoScope='both', currentCompanyGeoCountries='';
 
 const STEPS={
   domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
@@ -424,10 +440,20 @@ document.querySelectorAll('#modePills .pill').forEach(p=>p.addEventListener('cli
   p.classList.add('selected');
   currentMode=p.dataset.val;
   const isCompany = currentMode==='company';
-  document.getElementById('commodityModeBlock').style.display = isCompany ? 'none' : '';
-  document.getElementById('companyModeBlock').style.display  = isCompany ? '' : 'none';
-  document.getElementById('sourcesBlock').style.display      = isCompany ? 'none' : '';
-  document.querySelector('.btn-launch span').textContent     = isCompany ? "FIND THEIR SUPPLIERS" : "FIND SUPPLIERS";
+  document.getElementById('commodityModeBlock').style.display      = isCompany ? 'none' : '';
+  document.getElementById('companyModeBlock').style.display        = isCompany ? '' : 'none';
+  document.getElementById('sourcesBlock').style.display            = isCompany ? 'none' : '';
+  document.getElementById('commodityCountriesBlock').style.display = isCompany ? 'none' : '';
+  document.getElementById('companyCountriesBlock').style.display   = isCompany ? '' : 'none';
+  document.getElementById('emailCampaignBlock').style.display      = isCompany ? 'none' : '';
+  document.querySelector('.btn-launch span').textContent           = isCompany ? "FIND THEIR SUPPLIERS" : "FIND SUPPLIERS";
+}));
+
+// Company geo pills
+document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#companyGeoPills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected');
+  currentCompanyGeoScope=p.dataset.val;
 }));
 
 // Supplier type pills
@@ -564,7 +590,9 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     imageData:imageData||null,
     imageType:imageType||null,
     mode: currentMode,
-    companyName: currentCompanyName
+    companyName: currentCompanyName,
+    companyGeoScope: currentCompanyGeoScope,
+    companyGeoCountries: currentCompanyGeoCountries
   };
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
@@ -602,6 +630,7 @@ async function runSearch(){
     if(!companyName){showError('Please enter a target company name.');return;}
     currentCompanyName=companyName;
     currentCommodity=companyName; // used as display title
+    currentCompanyGeoCountries=document.getElementById('companyCountriesInput').value.trim();
   } else {
     if(!commodity&&!pastedImageData){showError('Please describe what you are sourcing.');return;}
     currentCompanyName='';
@@ -623,15 +652,18 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   document.getElementById('loadingPanel').classList.add('active');
   setProgress(0,'Starting...');
 
+  // Email campaign is never used in company mode
+  const wantEmails = includeEmails && currentMode !== 'company';
+
   const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
   const stepKey = (currentMode === 'company') ? 'company' : searchScope;
   const baseSteps=[...STEPS[stepKey]];
-  if(includeEmails&&isFirst) baseSteps.push('Drafting email campaign');
+  if(wantEmails&&isFirst) baseSteps.push('Drafting email campaign');
   const stepsEl=document.getElementById('loaderSteps');
   stepsEl.innerHTML=baseSteps.map(s=>'<div class="loader-step">&#8594; '+s+'</div>').join('');
   const stepEls=stepsEl.querySelectorAll('.loader-step');
-  const supplierStepCount=baseSteps.length-((includeEmails&&isFirst)?1:0);
-  const supplierPct=(includeEmails&&isFirst)?60:100;
+  const supplierStepCount=baseSteps.length-((wantEmails&&isFirst)?1:0);
+  const supplierPct=(wantEmails&&isFirst)?60:100;
   let i=0;
   const interval=setInterval(()=>{
     if(i<stepEls.length){
@@ -660,7 +692,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       showToast(fresh.length+' new suppliers added!');
     }
 
-    if(includeEmails&&isFirst){
+    if(wantEmails&&isFirst){
       const emailTemplate=await callEmail(commodity, includeAttach, attachList);
       emails=[emailTemplate];
     }
@@ -965,7 +997,7 @@ function showError(msg){ const p=document.getElementById('errorPanel'); p.textCo
 function reset(){
   document.getElementById('resultsPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='block';
-  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
   fitFilter='all'; supplierType='both'; currentSupplierType='both';
@@ -973,11 +1005,17 @@ function reset(){
   document.querySelector('#supplierTypePills .pill[data-val="both"]').classList.add('selected');
   // Reset mode pills back to commodity
   currentMode='commodity'; currentCompanyName='';
+  currentCompanyGeoScope='both'; currentCompanyGeoCountries='';
   document.querySelectorAll('#modePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#modePills .pill[data-val="commodity"]').classList.add('selected');
+  document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.classList.remove('selected'));
+  document.querySelector('#companyGeoPills .pill[data-val="both"]').classList.add('selected');
   document.getElementById('commodityModeBlock').style.display='';
   document.getElementById('companyModeBlock').style.display='none';
   document.getElementById('sourcesBlock').style.display='';
+  document.getElementById('commodityCountriesBlock').style.display='';
+  document.getElementById('companyCountriesBlock').style.display='none';
+  document.getElementById('emailCampaignBlock').style.display='';
   const launchSpan=document.querySelector('.btn-launch span'); if(launchSpan) launchSpan.textContent='FIND SUPPLIERS';
   currentCommodity=''; currentCerts=''; currentCountries=[];
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
