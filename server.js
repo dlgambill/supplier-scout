@@ -535,16 +535,13 @@ app.post('/api/search', async (req, res) => {
         return res.status(400).json({ error: 'companyName is required for company search mode' });
       }
 
-      systemInstruction = `You are a Supply Chain Intelligence Analyst. You provide raw data in JSON format.
-Your job is to identify the VENDORS and SUPPLIERS that sell to a target company — companies that appear in the target's ACCOUNTS PAYABLE.
-You must NEVER return:
-- The target's CUSTOMERS (companies that BUY from the target)
-- COMPETITORS or peer companies in the same industry
-- Government agencies, regulators, certifying bodies, or military branches
-- Universities, research institutions, or non-profits (unless they are clearly a paid contract manufacturer)
-- News outlets, analyst firms, or trade publications that merely mention the target
-- Aggregator/directory sites (ImportYeti, Panjiva, ThomasNet, Bloomberg, etc.) themselves as entities
-No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
+      systemInstruction = `You are a Supply Chain Intelligence Analyst. Your job is to research and return a JSON array of verified VENDORS and SUPPLIERS — companies that sell to a target company and appear in the target's accounts payable.
+
+Use the web search capabilities available to you. Major buyers have publicly available supplier information: SEC 10-K "principal suppliers" sections, supplier diversity pages on the target's own website, ImportYeti and Panjiva trade records, press releases announcing supply agreements, and news articles. Aim for 10–20 verified suppliers per query.
+
+Exclude: customers of the target (entities that buy from the target), competitors, government agencies, military branches, universities, research labs, non-profits, news outlets, analyst firms, and the directory websites themselves.
+
+Output: raw JSON array only. No markdown code blocks. No preamble. Start with [ and end with ].`;
 
       // Build optional date-range section (company mode only, when both dates valid)
       const dateRangeSection = hasDateRange
@@ -577,8 +574,10 @@ Perform deep web research to identify verified VENDORS that "${targetCompany}" P
 ${geoDirective}
 ${dateRangeSection}
 [DIRECTION OF MONEY — CRITICAL]
-Money must flow FROM ${targetCompany} TO the supplier. If ${targetCompany} is the one being paid (i.e., the other party is a customer), EXCLUDE it.
-Test for every candidate: "Does ${targetCompany} write a check to this entity?" If no, exclude.
+Money must flow FROM ${targetCompany} TO the supplier. ${targetCompany} is the BUYER; the supplier is the SELLER receiving payment.
+This means: for retailers (Walmart, Target, Costco), the brands they stock (P&G, Coca-Cola, Tyson, Mattel, etc.) ARE valid suppliers — Walmart pays those brands wholesale. For manufacturers (Boeing, Tesla), the parts and material suppliers are valid. For service companies, IT vendors, contract manufacturers, logistics firms, and packaging suppliers are valid.
+What is NOT valid: ${targetCompany}'s customers (entities ${targetCompany} sells to), competitors, or end consumers.
+Test: "Does ${targetCompany} write a check or wire payment to this entity?" If yes, valid. If no, exclude.
 
 [HARD EXCLUSIONS — ZERO TOLERANCE]
 Do NOT return any of the following, regardless of how often they co-occur with "${targetCompany}":
@@ -616,8 +615,9 @@ Do NOT return any of the following, regardless of how often they co-occur with "
 [OUTPUT RULES]
 - RETURN ONLY A JSON ARRAY.
 - NO MARKDOWN: Do not use \`\`\`json or any backticks. Start with [ and end with ].
-- NO PLACEHOLDERS: If you cannot find a specific supplier with evidence, do not create an entry. Return [] rather than guess.
-- TOKEN MANAGEMENT: Once you have identified 15 verified suppliers, stop searching immediately and generate the JSON output.
+- TARGET 10–20 RESULTS: Aim to return 10–20 verified suppliers. Major buyers like Walmart, Tesla, Boeing, P&G, Apple have publicly-disclosed supplier lists, supplier diversity pages, ImportYeti records, and 10-K filings — use them. If after diligent research you can only find 5, return 5; the goal is real research effort, not minimum entries.
+- EVIDENCE STANDARD: Each entry needs specific evidence (named in a filing, listed on a supplier diversity page, appears in import records). A supplier mentioned in a single news article is acceptable. Hard-fabricated names are not acceptable.
+- TOKEN MANAGEMENT: Once you have identified 20 verified suppliers, stop searching immediately and generate the JSON output.
 
 [JSON SCHEMA]
 [
@@ -691,6 +691,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
     let responseText;
     let perplexityCitations = [];
     let usedProvider = null;
+    let perplexityRaw = null; // keep raw output around for diagnostic & fallback
 
     // Image searches must use Gemini (Perplexity API doesn't accept images).
     const hasImage = !!(imageData && imageType);
@@ -700,13 +701,29 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       try {
         console.log('Calling Perplexity Sonar...');
         const result = await callPerplexity(supplierPrompt, perplexityKey, systemInstruction);
-        responseText = result.text;
+        perplexityRaw = result.text;
         perplexityCitations = result.citations || [];
-        usedProvider = 'perplexity';
-        console.log('Perplexity response received');
+        // Log a sample so we can debug why suppliers might be zero
+        console.log('=== PERPLEXITY RAW (first 800 chars) ===');
+        console.log(perplexityRaw.substring(0, 800));
+        console.log('=== END PERPLEXITY RAW ===');
+        // Quick pre-flight: try parsing and count suppliers
+        let preflightSuppliers = null;
+        try {
+          preflightSuppliers = parseJSON(perplexityRaw);
+        } catch (parseErr) {
+          console.warn('Perplexity output failed JSON pre-flight parse:', parseErr.message);
+        }
+        const preflightCount = Array.isArray(preflightSuppliers) ? preflightSuppliers.length : -1;
+        console.log(`Perplexity pre-flight supplier count: ${preflightCount}`);
+        if (preflightCount > 0) {
+          responseText = perplexityRaw;
+          usedProvider = 'perplexity';
+        } else {
+          console.warn('Perplexity returned 0 parseable suppliers — falling through to Gemini');
+        }
       } catch (perplexityErr) {
         console.error('Perplexity failed:', perplexityErr.message);
-        responseText = null;
       }
     }
 
@@ -721,6 +738,14 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
         console.error('Gemini failed:', geminiErr.message);
         responseText = null;
       }
+    }
+
+    // If Gemini also failed/returned nothing but we have Perplexity raw output, use it anyway
+    // (better to return what we have than nothing)
+    if (!responseText && perplexityRaw) {
+      console.log('Falling back to Perplexity raw output despite low pre-flight count');
+      responseText = perplexityRaw;
+      usedProvider = 'perplexity';
     }
 
     // Provider 3: Claude Haiku (final fallback, no live web)
