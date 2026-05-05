@@ -166,72 +166,6 @@ function filterByScope(suppliers, scope, countries, selectedCountries) {
   return suppliers;
 }
 
-// ── Non-supplier exclusion patterns for company-search mode ─────────────────
-// These match entities that show up in search results around a target company
-// but are not vendors (customers, regulators, schools, news, etc).
-//
-// IMPORTANT: Patterns must be specific enough that they don't false-match real
-// industrial suppliers. Generic single words like "institute", "authority",
-// "agency", "news", "journal" are too broad on their own — anchor them to
-// type-indicator positions or distinctive phrases.
-const NON_SUPPLIER_PATTERNS = [
-  // Education & research — match only when these words clearly indicate the entity type
-  /\buniversity (of|at)\b/i, /\bof [a-z\- ]{3,40} university\b/i,
-  /\b(community |state |technical )?college\b/i, /\binstitute of technology\b/i,
-  /\bschool of (engineering|business|medicine|law|public health)\b/i,
-  /\b(state|technical) polytechnic\b/i, /\bpolytechnic university\b/i,
-  /\bnational lab(oratory|oratories)?\b/i, /\b(research|teaching) hospital\b/i,
-  /\bfraunhofer\b/i, /\b(mit|caltech|stanford|berkeley|harvard) (university|laboratory|lab)\b/i,
-  // Government — US (specific named agencies and clear type prefixes)
-  /^(u\.?s\.? )?department of\b/i, /\bu\.?s\.? department of\b/i,
-  /\bministry of\b/i,
-  /^(federal|state|us|u\.s\.) (bureau|administration|agency|commission|department)\b/i,
-  /\b(faa|fcc|fda|epa|nasa|usda|gsa|nih|nsf|doe|dod|dol|dot|nrc|sec\.gov|irs)\b/i,
-  /\b(us|u\.s\.|united states) (army|navy|air force|marine corps|coast guard|space force)\b/i,
-  /\bdefense logistics agency\b/i, /\bpentagon\b/i,
-  // Government — generic / foreign
-  /^government of\b/i, /^city of\b/i, /^state of\b/i, /^county of\b/i,
-  /\b(port|housing|transit|water) authority\b/i, /\bcity council\b/i,
-  // Standards / certification / non-profit (prefer named bodies + clear type indicators)
-  /\b(iso|astm international|ieee|sae international|ansi|underwriters laboratories|ul llc)\b/i,
-  /\bnon-?profit\b/i, /\bcharitable foundation\b/i,
-  /\b[a-z ]+ trade association\b/i, /\b[a-z ]+ industry association\b/i,
-  // Media / analyst / publishing (specific outlets only)
-  /\b(reuters|bloomberg news|bloomberg l\.?p\.?|cnbc|wsj|wall street journal|new york times|nyt|forbes|fortune magazine|bbc|cnn|axios|the guardian|financial times|barron'?s)\b/i,
-  /\b(gartner|forrester research|idc research|moody'?s|s&p global|fitch ratings|morningstar)\b/i,
-  // Aggregators / directories themselves
-  /\b(importyeti|panjiva|datamyne|thomasnet|kompass|global ?sources|sec\.gov|crunchbase|dun ?& ?bradstreet)\b/i,
-  // Generic placeholders / non-entities
-  /^(various|multiple) (suppliers|vendors)$/i, /^(undisclosed|confidential)$/i, /^n\/?a$/i,
-  /^supplier #?\d+$/i, /^vendor #?\d+$/i
-];
-
-function isNonSupplierEntity(name) {
-  if (!name) return true;
-  const n = name.trim();
-  if (!n) return true;
-  for (const rx of NON_SUPPLIER_PATTERNS) {
-    if (rx.test(n)) {
-      console.log(`  [exclude] "${n}" matched pattern ${rx}`);
-      return true;
-    }
-  }
-  return false;
-}
-
-function isSelfOrSubsidiary(name, targetCompany) {
-  if (!name || !targetCompany) return false;
-  const a = name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-  const b = targetCompany.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-  if (!a || !b) return false;
-  if (a === b) return true;
-  // "Boeing" matches "Boeing Company" / "The Boeing Company" / "Boeing Defense"
-  if (a.includes(b) && b.length >= 4) return true;
-  if (b.includes(a) && a.length >= 4) return true;
-  return false;
-}
-
-
 // ── Gemini call with model cascade ────────────────────────────────────────
 const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash'];
 
@@ -340,43 +274,22 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries, dateFrom, dateTo } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName } = req.body;
     const cleanedCommodity = cleanCommodity(commodity || '');
     const searchMode = (mode === 'company') ? 'company' : 'commodity';
     const targetCompany = (companyName || '').trim();
 
-    // Validate date range — accept only YYYY-MM-DD strings; ignore otherwise
-    const dateRx = /^\d{4}-\d{2}-\d{2}$/;
-    const validDateFrom = (dateFrom && dateRx.test(dateFrom)) ? dateFrom : '';
-    const validDateTo   = (dateTo   && dateRx.test(dateTo))   ? dateTo   : '';
-    const hasDateRange  = searchMode === 'company' && validDateFrom && validDateTo && validDateFrom <= validDateTo;
+    const countryList = selectedCountries && selectedCountries.length ? selectedCountries : [];
+    const hasUSA = countryList.includes('USA');
+    const foreignCountries = countryList.filter(c => c !== 'USA');
+    const allDomestic = hasUSA && foreignCountries.length === 0;
+    const allForeign = foreignCountries.length > 0 && !hasUSA;
+    const mixed = hasUSA && foreignCountries.length > 0;
 
-    let geoSelected;
-
-    if (searchMode === 'company') {
-      // Company mode uses a separate geo control: 'domestic' / 'foreign' / 'both' + optional free-text countries
-      const extraCountries = (companyGeoCountries || '').trim();
-      if (companyGeoScope === 'domestic') {
-        geoSelected = 'United States';
-      } else if (companyGeoScope === 'foreign') {
-        geoSelected = extraCountries ? extraCountries : 'Any country except the United States';
-      } else {
-        // 'both' or unspecified
-        geoSelected = extraCountries ? `United States and ${extraCountries}` : 'Global (no restriction)';
-      }
-    } else {
-      const countryList = selectedCountries && selectedCountries.length ? selectedCountries : [];
-      const hasUSA = countryList.includes('USA');
-      const foreignCountries = countryList.filter(c => c !== 'USA');
-      const allDomestic = hasUSA && foreignCountries.length === 0;
-      const allForeign = foreignCountries.length > 0 && !hasUSA;
-      const mixed = hasUSA && foreignCountries.length > 0;
-
-      geoSelected = allDomestic ? 'United States'
-        : allForeign ? foreignCountries.join(', ')
-        : mixed ? `United States, ${foreignCountries.join(', ')}`
-        : 'Global (no restriction)';
-    }
+    const geoSelected = allDomestic ? 'United States'
+      : allForeign ? foreignCountries.join(', ')
+      : mixed ? `United States, ${foreignCountries.join(', ')}`
+      : 'Global (no restriction)';
 
     const certText = certs ? certs : 'None';
     const supplierTypeText = supplierType === 'manufacturers'
@@ -400,71 +313,37 @@ app.post('/api/search', async (req, res) => {
       }
 
       systemInstruction = `You are a Supply Chain Intelligence Analyst. You provide raw data in JSON format.
-Your job is to identify the VENDORS and SUPPLIERS that sell to a target company — companies that appear in the target's ACCOUNTS PAYABLE.
-You must NEVER return:
-- The target's CUSTOMERS (companies that BUY from the target)
-- COMPETITORS or peer companies in the same industry
-- Government agencies, regulators, certifying bodies, or military branches
-- Universities, research institutions, or non-profits (unless they are clearly a paid contract manufacturer)
-- News outlets, analyst firms, or trade publications that merely mention the target
-- Aggregator/directory sites (ImportYeti, Panjiva, ThomasNet, Bloomberg, etc.) themselves as entities
+Your job is to identify the VENDORS and SUPPLIERS that sell to a target company — i.e., the companies that appear in the target's accounts payable, not the target's customers or competitors.
 No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
-      // Build optional date-range section (company mode only, when both dates valid)
-      const dateRangeSection = hasDateRange
-        ? `\n[DATE RANGE — EVIDENCE PREFERENCE]\nStrongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.\n- Rank suppliers with evidence in this window highest.\n- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.\n- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.\n`
-        : '';
-
       supplierPrompt = `[GOAL]
-Perform deep-web research using Google Search to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
+Perform deep-web research using Google Search to identify verified vendors, suppliers, and contract manufacturers that sell to "${targetCompany}".
 
 [TARGET COMPANY]
 - Company Name: "${targetCompany}"
 - Required Certs: ${certText}
 - HTS Code (commodity hint): ${htsText}
 - Geography Scope: ${geoSelected}
-${dateRangeSection}
-[DIRECTION OF MONEY — CRITICAL]
-Money must flow FROM ${targetCompany} TO the supplier. If ${targetCompany} is the one being paid (i.e., the other party is a customer), EXCLUDE it.
-Test for every candidate: "Does ${targetCompany} write a check to this entity?" If no, exclude.
-
-[HARD EXCLUSIONS — ZERO TOLERANCE]
-Do NOT return any of the following, regardless of how often they co-occur with "${targetCompany}":
-- Customers of ${targetCompany} (entities that BUY from ${targetCompany})
-- Competitors or peer companies (companies that sell similar products to similar customers)
-- Government agencies (Department of Defense, FAA, FDA, EPA, NASA, USDA, GSA, state agencies, foreign equivalents)
-- Military branches (Army, Navy, Air Force, Marines, Coast Guard, foreign equivalents)
-- Universities, colleges, research labs, or academic institutions (Stanford, MIT, Fraunhofer, etc.)
-- Non-profit organizations, foundations, industry associations, standards bodies (ISO, ASTM, IEEE, SAE)
-- Certifying bodies, auditors, or regulators
-- News outlets, analyst firms, trade publications, or rating agencies (Reuters, Bloomberg, Gartner, Moody's)
-- Investors, venture capital firms, private equity firms, or banks (unless clearly a paid service vendor)
-- Law firms, consultancies, or PR firms (unless explicitly named as a paid vendor in filings)
-- The aggregator websites themselves (ImportYeti, Panjiva, ThomasNet, Datamyne, SEC.gov)
-- ${targetCompany} itself, its subsidiaries, or its parent company
 
 [RESEARCH PROTOCOL]
-1. EXECUTE SEARCH:
+1. EXECUTE SEARCH: Use the search tool to query sources that surface buyer/supplier relationships:
    - "${targetCompany}" supplier
    - "${targetCompany}" vendor
    - "${targetCompany}" "supplied by" OR "manufactured by" OR "contract manufacturer"
    - site:importyeti.com "${targetCompany}"
    - site:panjiva.com "${targetCompany}"
-   - "${targetCompany}" 10-K "principal suppliers" OR "key suppliers" OR "raw materials"
+   - "${targetCompany}" 10-K supplier OR "principal suppliers"
    - "${targetCompany}" press release partnership manufacturer
-   - "${targetCompany}" bill of lading OR shipment records OR consignor${hasDateRange ? `
-   - When useful, narrow queries with Google's date operators (e.g. \`"${targetCompany}" supplier after:${validDateFrom} before:${validDateTo}\`) to find recent evidence.` : ''}
-2. SOURCE PRIORITY: Bills of lading naming ${targetCompany} as CONSIGNEE (not consignor), SEC 10-K "principal suppliers" sections, press releases where ${targetCompany} announces a vendor agreement, supplier diversity pages on ${targetCompany}'s own site.
-3. VALIDATE EACH CANDIDATE before including:
-   a. Confirm the entity is a for-profit company that SELLS GOODS OR SERVICES.
-   b. Confirm the evidence shows ${targetCompany} as the BUYER, not the seller.
-   c. Confirm the entity is NOT in the hard exclusion list above.
-4. EVIDENCE: For each supplier returned, fitReason MUST cite specific evidence and direction (e.g., "ImportYeti shows 14 shipments with ${targetCompany} as consignee, 2023-2024" or "Named in ${targetCompany}'s 2024 10-K as supplier of titanium fasteners").
+   - "${targetCompany}" bill of lading OR shipment records
+2. SOURCE PRIORITY: Import/export records (ImportYeti, Panjiva, Datamyne), SEC filings (10-K, 10-Q "principal suppliers"), press releases announcing supply agreements, news articles naming specific vendors, and the target company's own supplier diversity / approved vendor pages.
+3. VALIDATE ENTITY: Identify the SPECIFIC supplier company name. Do NOT include the target company itself. Do NOT include the target's customers, competitors, or downstream resellers.
+4. EVIDENCE: For each supplier returned, the fitReason MUST cite the evidence (e.g., "Listed in ImportYeti as bill-of-lading consignor for ${targetCompany} 2023-2024" or "Named as contract manufacturer in 2024 press release").
 
-[OUTPUT RULES]
+[OUTPUT RULES - ZERO TOLERANCE]
 - RETURN ONLY A JSON ARRAY.
 - NO MARKDOWN: Do not use \`\`\`json or any backticks. Start with [ and end with ].
-- NO PLACEHOLDERS: If you cannot find a specific supplier with evidence, do not create an entry. Return [] rather than guess.
+- NO PLACEHOLDERS: If you cannot find a specific supplier name with evidence, do not create an entry. Return [] rather than guess.
+- NO COMPETITORS: Do not list companies similar to ${targetCompany}. Only list its inputs/vendors.
 - TOKEN MANAGEMENT: Once you have identified 15 verified suppliers, stop searching immediately and generate the JSON output.
 
 [JSON SCHEMA]
@@ -479,7 +358,7 @@ Do NOT return any of the following, regardless of how often they co-occur with "
     "tags": ["component or service", "relationship type"],
     "certs": [],
     "fit": "high | medium | low",
-    "fitReason": "Cite the specific evidence and direction of relationship.",
+    "fitReason": "Cite the specific evidence linking this supplier to ${targetCompany}.",
     "contactEmail": "",
     "contactName": ""
   }
@@ -568,37 +447,8 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
         if (searchMode !== 'company') {
           suppliers = filterByScope(suppliers, scope, countries, selectedCountries);
         } else {
-          // Strip junk + non-supplier entities (universities, agencies, etc) + the target itself
-          const beforeExcl = suppliers.length;
-          suppliers = suppliers.filter(s => {
-            if (!s || !s.name) return false;
-            if (/search result|no specific company|not provided/i.test(s.name)) return false;
-            if (isNonSupplierEntity(s.name)) {
-              console.log(`Excluding non-supplier: ${s.name}`);
-              return false;
-            }
-            if (isSelfOrSubsidiary(s.name, targetCompany)) {
-              console.log(`Excluding target/subsidiary: ${s.name}`);
-              return false;
-            }
-            return true;
-          });
-          console.log(`Company-mode exclusion filter: ${beforeExcl} → ${suppliers.length}`);
-
-          // Enforce company-mode geography scope
-          if (companyGeoScope === 'domestic') {
-            suppliers = suppliers.filter(s => {
-              const loc = s.location || '';
-              if (!loc || /n\/?a|unknown/i.test(loc)) return true; // allow unknowns
-              return isUSLocation(loc) || /\b(usa|united states|u\.?s\.?)\b/i.test(loc);
-            });
-          } else if (companyGeoScope === 'foreign') {
-            suppliers = suppliers.filter(s => {
-              const loc = s.location || '';
-              if (!loc || /n\/?a|unknown/i.test(loc)) return true;
-              return !isUSLocation(loc);
-            });
-          }
+          // Still strip junk entries
+          suppliers = suppliers.filter(s => s && s.name && !/search result|no specific company|not provided/i.test(s.name));
         }
         if (supplierType && supplierType !== 'both') {
           suppliers = filterBySupplierType(suppliers, supplierType);
