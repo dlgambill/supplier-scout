@@ -167,7 +167,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.6</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.7</div>
   </header>
 
   <div id="inputPanel">
@@ -257,7 +257,19 @@ input[type="date"]:focus { border-color:var(--accent); }
         <div class="pill" data-val="foreign">Foreign Only</div>
         <div class="pill selected" data-val="both">Both</div>
       </div>
-      <div style="margin-top:10px;">
+      <div style="margin-top:14px;">
+        <label style="font-size:11px;color:var(--text3);">Continents <span style="color:var(--text3)">(optional, multi-select)</span></label>
+        <div class="pill-group" id="continentPills" style="margin-top:4px;">
+          <div class="pill" data-val="north_america">North America</div>
+          <div class="pill" data-val="south_america">South America</div>
+          <div class="pill" data-val="europe">Europe</div>
+          <div class="pill" data-val="asia">Asia</div>
+          <div class="pill" data-val="middle_east">Middle East</div>
+          <div class="pill" data-val="africa">Africa</div>
+          <div class="pill" data-val="oceania">Oceania</div>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
         <label style="font-size:11px;color:var(--text3);">Specific countries to focus on <span style="color:var(--text3)">(optional, comma separated)</span></label>
         <input type="text" id="companyCountriesInput" placeholder="e.g. China, Mexico, Vietnam" style="margin-top:4px;" />
       </div>
@@ -457,6 +469,7 @@ let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 let currentMode='commodity', currentCompanyName='';
 let currentCompanyGeoScope='both', currentCompanyGeoCountries='';
+let currentContinents=[];
 let currentDateFrom='', currentDateTo='';
 
 const STEPS={
@@ -487,6 +500,12 @@ document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.addEventListene
   document.querySelectorAll('#companyGeoPills .pill').forEach(x=>x.classList.remove('selected'));
   p.classList.add('selected');
   currentCompanyGeoScope=p.dataset.val;
+}));
+
+// Continent pills (multi-select)
+document.querySelectorAll('#continentPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  p.classList.toggle('selected');
+  currentContinents=[...document.querySelectorAll('#continentPills .pill.selected')].map(el=>el.dataset.val);
 }));
 
 // Supplier type pills
@@ -643,6 +662,7 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     companyName: currentCompanyName,
     companyGeoScope: currentCompanyGeoScope,
     companyGeoCountries: currentCompanyGeoCountries,
+    companyContinents: currentContinents,
     dateFrom: currentDateFrom,
     dateTo: currentDateTo
   };
@@ -1068,6 +1088,8 @@ function reset(){
   // Reset mode pills back to commodity
   currentMode='commodity'; currentCompanyName='';
   currentCompanyGeoScope='both'; currentCompanyGeoCountries='';
+  currentContinents=[];
+  document.querySelectorAll('#continentPills .pill').forEach(p=>p.classList.remove('selected'));
   currentDateFrom=''; currentDateTo='';
   useDateRange=false;
   const dateToggle=document.getElementById('dateRangeToggle');
