@@ -415,7 +415,10 @@ async function callClaude(prompt, anthropicKey, expectArray = true) {
 // these criteria." Returns text + a separate citations array we splice into
 // supplier source fields downstream.
 async function callPerplexity(prompt, perplexityKey, systemInstruction = '') {
-  const PERPLEXITY_MODEL = 'sonar'; // Start with base; upgrade to 'sonar-pro' if quality lacking
+  // Sonar Pro: base was returning empty arrays / refusals on the elaborate prompt.
+  // Pro does deeper multi-source retrieval and handles long structured prompts better.
+  // Cost: ~$3 input / $15 output per 1M tokens — roughly 2-3¢ per search at our prompt sizes.
+  const PERPLEXITY_MODEL = 'sonar-pro';
   const messages = [];
   if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
   messages.push({ role: 'user', content: prompt });
@@ -537,11 +540,21 @@ app.post('/api/search', async (req, res) => {
 
       systemInstruction = `You are a Supply Chain Intelligence Analyst. Your job is to research and return a JSON array of verified VENDORS and SUPPLIERS — companies that sell to a target company and appear in the target's accounts payable.
 
-Use the web search capabilities available to you. Major buyers have publicly available supplier information: SEC 10-K "principal suppliers" sections, supplier diversity pages on the target's own website, ImportYeti and Panjiva trade records, press releases announcing supply agreements, and news articles. Aim for 10–20 verified suppliers per query.
+RESEARCH METHODOLOGY: Run multiple independent searches across different source types before concluding. If your first search returns only the target's customers/distributors, search again with different queries. Try at least these angles before giving up:
+1. Target's own supplier diversity / approved vendor pages (site:[targetdomain].com supplier OR vendor OR "approved supplier")
+2. SEC filings: "[target] 10-K principal suppliers" / "[target] 10-K key suppliers"
+3. Trade records: site:importyeti.com [target], site:panjiva.com [target]
+4. Press releases: "[target] announces partnership with" / "[target] selects [vendor]"
+5. News articles naming specific vendors who supply the target
+6. Industry reports identifying the target's supply chain
 
-Exclude: customers of the target (entities that buy from the target), competitors, government agencies, military branches, universities, research labs, non-profits, news outlets, analyst firms, and the directory websites themselves.
+Major companies (publicly traded, large private firms) ALWAYS have publicly disclosed supplier information. If your initial searches return only retailers/distributors of the target's products, that means you searched the wrong direction — pivot to the sources above.
 
-Output: raw JSON array only. No markdown code blocks. No preamble. Start with [ and end with ].`;
+Aim for 10–20 verified suppliers per query. Returning an empty array or a diagnostic explanation of why you couldn't find suppliers is a failure mode — research harder.
+
+Exclude: customers (entities the target sells to), competitors, government agencies, military branches, universities, research labs, non-profits, news outlets, analyst firms, and aggregator websites themselves (ImportYeti, Panjiva, ThomasNet, Bloomberg, etc.).
+
+Output format: raw JSON array only. No markdown code blocks. No preamble. No explanatory notes. Start with [ and end with ].`;
 
       // Build optional date-range section (company mode only, when both dates valid)
       const dateRangeSection = hasDateRange
@@ -778,6 +791,13 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
             }
             if (isSelfOrSubsidiary(s.name, targetCompany)) {
               console.log(`Excluding target/subsidiary: ${s.name}`);
+              return false;
+            }
+            // Self-incriminating fitReason: AI sometimes returns an entity while admitting in
+            // the same field that it's a customer/distributor/reseller, not a supplier
+            const reason = (s.fitReason || '') + ' ' + (s.specialty || '');
+            if (/\b(customer of|rather than a supplier|not a supplier|is a customer|sells .* products|distributor of|reseller of|retailer of|buys from)\b/i.test(reason)) {
+              console.log(`  [self-incriminating fitReason] excluding "${s.name}": ${s.fitReason?.substring(0,100)}`);
               return false;
             }
             return true;
