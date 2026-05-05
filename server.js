@@ -410,6 +410,43 @@ async function callClaude(prompt, anthropicKey, expectArray = true) {
   return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
+// ── Perplexity Sonar API call ──────────────────────────────────────────────
+// Sonar's grounded retrieval is purpose-built for "find all entities matching
+// these criteria." Returns text + a separate citations array we splice into
+// supplier source fields downstream.
+async function callPerplexity(prompt, perplexityKey, systemInstruction = '') {
+  const PERPLEXITY_MODEL = 'sonar'; // Start with base; upgrade to 'sonar-pro' if quality lacking
+  const messages = [];
+  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
+  messages.push({ role: 'user', content: prompt });
+
+  const res = await fetch('https://api.perplexity.ai/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${perplexityKey}`
+    },
+    body: JSON.stringify({
+      model: PERPLEXITY_MODEL,
+      messages,
+      max_tokens: 4000,
+      temperature: 0.1,
+      // search_recency_filter could be added later if we want a hard date floor
+      return_citations: true
+    })
+  });
+  const data = await res.json();
+  if (!res.ok) {
+    const msg = (data && (data.error?.message || data.message)) || `HTTP ${res.status}`;
+    throw new Error(`Perplexity: ${msg}`);
+  }
+  const text = data.choices?.[0]?.message?.content || '';
+  const citations = data.citations || [];
+  if (!text.trim()) throw new Error('Perplexity returned empty content');
+  console.log(`Perplexity returned ${text.length} chars, ${citations.length} citations`);
+  return { text, citations };
+}
+
 function cleanCommodity(commodity) {
   return commodity
     .replace(/wholesale\s*only/gi, '').replace(/no\s*retail/gi, '')
@@ -421,10 +458,11 @@ function cleanCommodity(commodity) {
 
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
-  const geminiKey   = process.env.GEMINI_API_KEY;
-  const anthropicKey = process.env.ANTHROPIC_API_KEY;
+  const geminiKey     = process.env.GEMINI_API_KEY;
+  const anthropicKey  = process.env.ANTHROPIC_API_KEY;
+  const perplexityKey = process.env.PERPLEXITY_API_KEY;
 
-  if (!geminiKey && !anthropicKey) {
+  if (!perplexityKey && !geminiKey && !anthropicKey) {
     return res.status(500).json({ error: 'No API keys configured' });
   }
 
@@ -529,7 +567,7 @@ No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`j
       }
 
       supplierPrompt = `[GOAL]
-Perform deep-web research using Google Search to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
+Perform deep web research to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
 
 [TARGET COMPANY]
 - Company Name: "${targetCompany}"
@@ -608,7 +646,7 @@ CRITICAL: You are currently restricted to ${geoSelected} suppliers only. If a co
 No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
       supplierPrompt = `[GOAL]
-Perform deep-web research using Google Search to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
+Perform deep web research to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
 
 [COMMODITY DATA]
 - Commodity: "${cleanedCommodity}"
@@ -651,13 +689,33 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
     }
 
     let responseText;
-    let usedGemini = false;
+    let perplexityCitations = [];
+    let usedProvider = null;
 
-    if (geminiKey) {
+    // Image searches must use Gemini (Perplexity API doesn't accept images).
+    const hasImage = !!(imageData && imageType);
+
+    // Provider 1: Perplexity Sonar (primary for retrieval-heavy searches)
+    if (!hasImage && perplexityKey) {
+      try {
+        console.log('Calling Perplexity Sonar...');
+        const result = await callPerplexity(supplierPrompt, perplexityKey, systemInstruction);
+        responseText = result.text;
+        perplexityCitations = result.citations || [];
+        usedProvider = 'perplexity';
+        console.log('Perplexity response received');
+      } catch (perplexityErr) {
+        console.error('Perplexity failed:', perplexityErr.message);
+        responseText = null;
+      }
+    }
+
+    // Provider 2: Gemini with Google Search grounding (fallback or image searches)
+    if (!responseText && geminiKey) {
       try {
         console.log('Calling Gemini with Google Search grounding...');
         responseText = await callGemini(supplierPrompt, geminiKey, scope, countries, systemInstruction);
-        usedGemini = true;
+        usedProvider = 'gemini';
         console.log('Gemini response received');
       } catch (geminiErr) {
         console.error('Gemini failed:', geminiErr.message);
@@ -665,9 +723,11 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       }
     }
 
+    // Provider 3: Claude Haiku (final fallback, no live web)
     if (!responseText && anthropicKey) {
       console.log('Using Claude fallback...');
       responseText = await callClaude(supplierPrompt, anthropicKey, true);
+      usedProvider = 'claude';
     }
 
     if (!responseText) throw new Error('All AI providers failed');
@@ -767,12 +827,29 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       console.warn('Could not apply filters:', e.message);
     }
 
+    // If Perplexity supplied citations and a supplier's source field is empty/generic,
+    // attach the most relevant citation URL so the user can verify.
+    if (perplexityCitations.length && Array.isArray(suppliers)) {
+      suppliers.forEach(s => {
+        if (!s.source || /^(web search|direct|search results?|n\/?a|unknown)$/i.test(s.source)) {
+          s.source = 'Perplexity (multi-source)';
+        }
+      });
+      // Replace responseText so frontend gets the enriched data
+      responseText = JSON.stringify(suppliers);
+    }
+
+    const usedLiveSearch = usedProvider === 'perplexity' || usedProvider === 'gemini';
+
     res.json({
       claudeData: {
         content: [{ type: 'text', text: responseText }]
       },
-      usedSerpApi: usedGemini,
-      usedGemini
+      usedSerpApi: usedLiveSearch,
+      usedGemini: usedProvider === 'gemini',
+      usedPerplexity: usedProvider === 'perplexity',
+      usedProvider,
+      perplexityCitations: perplexityCitations.slice(0, 30) // cap so we don't bloat payload
     });
 
   } catch (err) {
