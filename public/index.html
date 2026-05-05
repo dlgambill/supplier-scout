@@ -158,7 +158,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.1</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.2</div>
   </header>
 
   <div id="inputPanel">
@@ -251,6 +251,23 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div style="margin-top:10px;">
         <label style="font-size:11px;color:var(--text3);">Specific countries to focus on <span style="color:var(--text3)">(optional, comma separated)</span></label>
         <input type="text" id="companyCountriesInput" placeholder="e.g. China, Mexico, Vietnam" style="margin-top:4px;" />
+      </div>
+    </div>
+
+    <div class="input-block" id="companyDateRangeBlock" style="display:none;">
+      <label>Evidence date range <span style="color:var(--text3)">(prefer relationships active within this window)</span></label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
+        <div>
+          <label style="font-size:11px;color:var(--text3);">From</label>
+          <input type="date" id="dateFromInput" style="margin-top:4px;" />
+        </div>
+        <div>
+          <label style="font-size:11px;color:var(--text3);">To</label>
+          <input type="date" id="dateToInput" style="margin-top:4px;" />
+        </div>
+      </div>
+      <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);">
+        Defaults to last 2 years. Older relationships may still appear if strongly supported.
       </div>
     </div>
 
@@ -426,6 +443,7 @@ let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 let currentMode='commodity', currentCompanyName='';
 let currentCompanyGeoScope='both', currentCompanyGeoCountries='';
+let currentDateFrom='', currentDateTo='';
 
 const STEPS={
   domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
@@ -445,8 +463,21 @@ document.querySelectorAll('#modePills .pill').forEach(p=>p.addEventListener('cli
   document.getElementById('sourcesBlock').style.display            = isCompany ? 'none' : '';
   document.getElementById('commodityCountriesBlock').style.display = isCompany ? 'none' : '';
   document.getElementById('companyCountriesBlock').style.display   = isCompany ? '' : 'none';
+  document.getElementById('companyDateRangeBlock').style.display   = isCompany ? '' : 'none';
   document.getElementById('emailCampaignBlock').style.display      = isCompany ? 'none' : '';
   document.querySelector('.btn-launch span').textContent           = isCompany ? "FIND THEIR SUPPLIERS" : "FIND SUPPLIERS";
+
+  // Seed default dates the first time user enters company mode (last 2 years)
+  if (isCompany) {
+    const fromEl = document.getElementById('dateFromInput');
+    const toEl   = document.getElementById('dateToInput');
+    if (!fromEl.value && !toEl.value) {
+      const today = new Date();
+      const twoYearsAgo = new Date(today.getFullYear() - 2, today.getMonth(), today.getDate());
+      toEl.value   = today.toISOString().slice(0,10);
+      fromEl.value = twoYearsAgo.toISOString().slice(0,10);
+    }
+  }
 }));
 
 // Company geo pills
@@ -592,7 +623,9 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     mode: currentMode,
     companyName: currentCompanyName,
     companyGeoScope: currentCompanyGeoScope,
-    companyGeoCountries: currentCompanyGeoCountries
+    companyGeoCountries: currentCompanyGeoCountries,
+    dateFrom: currentDateFrom,
+    dateTo: currentDateTo
   };
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
@@ -631,6 +664,11 @@ async function runSearch(){
     currentCompanyName=companyName;
     currentCommodity=companyName; // used as display title
     currentCompanyGeoCountries=document.getElementById('companyCountriesInput').value.trim();
+    currentDateFrom=document.getElementById('dateFromInput').value || '';
+    currentDateTo=document.getElementById('dateToInput').value || '';
+    if(currentDateFrom && currentDateTo && currentDateFrom > currentDateTo){
+      showError('Date range is invalid: "From" date must be on or before "To" date.');return;
+    }
   } else {
     if(!commodity&&!pastedImageData){showError('Please describe what you are sourcing.');return;}
     currentCompanyName='';
@@ -997,7 +1035,7 @@ function showError(msg){ const p=document.getElementById('errorPanel'); p.textCo
 function reset(){
   document.getElementById('resultsPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='block';
-  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput','dateFromInput','dateToInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
   fitFilter='all'; supplierType='both'; currentSupplierType='both';
@@ -1006,6 +1044,7 @@ function reset(){
   // Reset mode pills back to commodity
   currentMode='commodity'; currentCompanyName='';
   currentCompanyGeoScope='both'; currentCompanyGeoCountries='';
+  currentDateFrom=''; currentDateTo='';
   document.querySelectorAll('#modePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#modePills .pill[data-val="commodity"]').classList.add('selected');
   document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.classList.remove('selected'));
@@ -1015,6 +1054,7 @@ function reset(){
   document.getElementById('sourcesBlock').style.display='';
   document.getElementById('commodityCountriesBlock').style.display='';
   document.getElementById('companyCountriesBlock').style.display='none';
+  document.getElementById('companyDateRangeBlock').style.display='none';
   document.getElementById('emailCampaignBlock').style.display='';
   const launchSpan=document.querySelector('.btn-launch span'); if(launchSpan) launchSpan.textContent='FIND SUPPLIERS';
   currentCommodity=''; currentCerts=''; currentCountries=[];
