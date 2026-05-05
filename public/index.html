@@ -34,18 +34,9 @@ header { display:flex; align-items:flex-end; justify-content:space-between; bord
 
 .input-block { margin-bottom:20px; }
 .input-block label { display:block; font-size:13px; color:var(--text2); margin-bottom:8px; }
-textarea, input[type="text"], input[type="date"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
+textarea, input[type="text"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
 textarea:focus, input:focus { border-color:var(--accent); }
 textarea::placeholder, input::placeholder { color:var(--text3); }
-
-/* Date input: monospace value, custom-tinted picker icon, no native fluff */
-input[type="date"] { font-family:'IBM Plex Mono',monospace; font-size:13px; letter-spacing:0.02em; color-scheme:dark; cursor:pointer; }
-input[type="date"]::-webkit-calendar-picker-indicator { filter:invert(0.6) sepia(1) saturate(5) hue-rotate(5deg); cursor:pointer; opacity:0.7; transition:opacity 0.2s; }
-input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:1; }
-input[type="date"]:focus { border-color:var(--accent); }
-.date-range-row { display:flex; gap:14px; margin-top:8px; flex-wrap:wrap; }
-.date-field { flex:1; min-width:170px; }
-.date-field label { display:block; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text3); margin-bottom:6px; }
 
 .commodity-wrap { position:relative; }
 .commodity-wrap textarea { padding-bottom:44px; }
@@ -167,7 +158,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.5</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.0</div>
   </header>
 
   <div id="inputPanel">
@@ -209,7 +200,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       </div>
     </div>
 
-    <div class="input-block" id="commodityCountriesBlock">
+    <div class="input-block">
       <label>Source countries <span style="color:var(--text3)">(select all that apply)</span></label>
       <div style="display:flex;gap:6px;margin-bottom:8px;">
         <div class="source-check" onclick="selectAllCountries()" id="allCountriesBtn">&#127760; All Countries</div>
@@ -250,41 +241,6 @@ input[type="date"]:focus { border-color:var(--accent); }
       </div>
     </div>
 
-    <div class="input-block" id="companyCountriesBlock" style="display:none;">
-      <label>Geography</label>
-      <div class="pill-group" id="companyGeoPills">
-        <div class="pill" data-val="domestic">Domestic Only</div>
-        <div class="pill" data-val="foreign">Foreign Only</div>
-        <div class="pill selected" data-val="both">Both</div>
-      </div>
-      <div style="margin-top:10px;">
-        <label style="font-size:11px;color:var(--text3);">Specific countries to focus on <span style="color:var(--text3)">(optional, comma separated)</span></label>
-        <input type="text" id="companyCountriesInput" placeholder="e.g. China, Mexico, Vietnam" style="margin-top:4px;" />
-      </div>
-    </div>
-
-    <div class="input-block" id="companyDateRangeBlock" style="display:none;">
-      <div id="dateRangeToggle" class="toggle-row" onclick="toggleOpt('dateRange')">
-        <div class="toggle-check">&#10003;</div>
-        Filter by evidence date range
-      </div>
-      <div id="dateRangeOptions" style="display:none;">
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-bottom:4px;">
-          Prefer relationships active within this window. Older relationships may still appear if strongly supported.
-        </div>
-        <div class="date-range-row">
-          <div class="date-field">
-            <label>From</label>
-            <input type="date" id="dateFromInput" />
-          </div>
-          <div class="date-field">
-            <label>To</label>
-            <input type="date" id="dateToInput" />
-          </div>
-        </div>
-      </div>
-    </div>
-
     <div class="input-block">
       <label>Supplier type</label>
       <div class="pill-group" id="supplierTypePills">
@@ -318,7 +274,6 @@ input[type="date"]:focus { border-color:var(--accent); }
       </div>
     </div>
 
-    <div id="emailCampaignBlock">
     <div class="input-block">
       <div id="emailToggle" class="toggle-row on" onclick="toggleOpt('email')">
         <div class="toggle-check on">&#10003;</div>
@@ -355,7 +310,6 @@ input[type="date"]:focus { border-color:var(--accent); }
           <input type="text" id="attachInput" placeholder="e.g. spec sheet, engineering drawing, RFQ" />
         </div>
       </div>
-    </div>
     </div>
 
     <button class="btn-launch" onclick="runSearch()">
@@ -452,12 +406,10 @@ input[type="date"]:focus { border-color:var(--accent); }
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both', useDateRange=false;
+let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both';
 let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 let currentMode='commodity', currentCompanyName='';
-let currentCompanyGeoScope='both', currentCompanyGeoCountries='';
-let currentDateFrom='', currentDateTo='';
 
 const STEPS={
   domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
@@ -472,21 +424,10 @@ document.querySelectorAll('#modePills .pill').forEach(p=>p.addEventListener('cli
   p.classList.add('selected');
   currentMode=p.dataset.val;
   const isCompany = currentMode==='company';
-  document.getElementById('commodityModeBlock').style.display      = isCompany ? 'none' : '';
-  document.getElementById('companyModeBlock').style.display        = isCompany ? '' : 'none';
-  document.getElementById('sourcesBlock').style.display            = isCompany ? 'none' : '';
-  document.getElementById('commodityCountriesBlock').style.display = isCompany ? 'none' : '';
-  document.getElementById('companyCountriesBlock').style.display   = isCompany ? '' : 'none';
-  document.getElementById('companyDateRangeBlock').style.display   = isCompany ? '' : 'none';
-  document.getElementById('emailCampaignBlock').style.display      = isCompany ? 'none' : '';
-  document.querySelector('.btn-launch span').textContent           = isCompany ? "FIND THEIR SUPPLIERS" : "FIND SUPPLIERS";
-}));
-
-// Company geo pills
-document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.addEventListener('click',()=>{
-  document.querySelectorAll('#companyGeoPills .pill').forEach(x=>x.classList.remove('selected'));
-  p.classList.add('selected');
-  currentCompanyGeoScope=p.dataset.val;
+  document.getElementById('commodityModeBlock').style.display = isCompany ? 'none' : '';
+  document.getElementById('companyModeBlock').style.display  = isCompany ? '' : 'none';
+  document.getElementById('sourcesBlock').style.display      = isCompany ? 'none' : '';
+  document.querySelector('.btn-launch span').textContent     = isCompany ? "FIND THEIR SUPPLIERS" : "FIND SUPPLIERS";
 }));
 
 // Supplier type pills
@@ -586,23 +527,6 @@ function toggleOpt(type){
     el.classList.toggle('on',includeAttach);
     el.querySelector('.toggle-check').innerHTML=includeAttach?'&#10003;':'';
     document.getElementById('attachOptions').style.display=includeAttach?'block':'none';
-  } else if(type==='dateRange'){
-    useDateRange=!useDateRange;
-    const el=document.getElementById('dateRangeToggle');
-    el.classList.toggle('on',useDateRange);
-    el.querySelector('.toggle-check').innerHTML=useDateRange?'&#10003;':'';
-    document.getElementById('dateRangeOptions').style.display=useDateRange?'block':'none';
-    // Seed default dates the first time the toggle is turned on (last 2 years)
-    if(useDateRange){
-      const fromEl=document.getElementById('dateFromInput');
-      const toEl=document.getElementById('dateToInput');
-      if(!fromEl.value && !toEl.value){
-        const today=new Date();
-        const twoYearsAgo=new Date(today.getFullYear()-2,today.getMonth(),today.getDate());
-        toEl.value=today.toISOString().slice(0,10);
-        fromEl.value=twoYearsAgo.toISOString().slice(0,10);
-      }
-    }
   }
 }
 
@@ -640,11 +564,7 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     imageData:imageData||null,
     imageType:imageType||null,
     mode: currentMode,
-    companyName: currentCompanyName,
-    companyGeoScope: currentCompanyGeoScope,
-    companyGeoCountries: currentCompanyGeoCountries,
-    dateFrom: currentDateFrom,
-    dateTo: currentDateTo
+    companyName: currentCompanyName
   };
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
@@ -682,17 +602,6 @@ async function runSearch(){
     if(!companyName){showError('Please enter a target company name.');return;}
     currentCompanyName=companyName;
     currentCommodity=companyName; // used as display title
-    currentCompanyGeoCountries=document.getElementById('companyCountriesInput').value.trim();
-    if(useDateRange){
-      currentDateFrom=document.getElementById('dateFromInput').value || '';
-      currentDateTo=document.getElementById('dateToInput').value || '';
-      if(currentDateFrom && currentDateTo && currentDateFrom > currentDateTo){
-        showError('Date range is invalid: "From" date must be on or before "To" date.');return;
-      }
-    } else {
-      currentDateFrom='';
-      currentDateTo='';
-    }
   } else {
     if(!commodity&&!pastedImageData){showError('Please describe what you are sourcing.');return;}
     currentCompanyName='';
@@ -714,18 +623,15 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   document.getElementById('loadingPanel').classList.add('active');
   setProgress(0,'Starting...');
 
-  // Email campaign is never used in company mode
-  const wantEmails = includeEmails && currentMode !== 'company';
-
   const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
   const stepKey = (currentMode === 'company') ? 'company' : searchScope;
   const baseSteps=[...STEPS[stepKey]];
-  if(wantEmails&&isFirst) baseSteps.push('Drafting email campaign');
+  if(includeEmails&&isFirst) baseSteps.push('Drafting email campaign');
   const stepsEl=document.getElementById('loaderSteps');
   stepsEl.innerHTML=baseSteps.map(s=>'<div class="loader-step">&#8594; '+s+'</div>').join('');
   const stepEls=stepsEl.querySelectorAll('.loader-step');
-  const supplierStepCount=baseSteps.length-((wantEmails&&isFirst)?1:0);
-  const supplierPct=(wantEmails&&isFirst)?60:100;
+  const supplierStepCount=baseSteps.length-((includeEmails&&isFirst)?1:0);
+  const supplierPct=(includeEmails&&isFirst)?60:100;
   let i=0;
   const interval=setInterval(()=>{
     if(i<stepEls.length){
@@ -754,7 +660,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       showToast(fresh.length+' new suppliers added!');
     }
 
-    if(wantEmails&&isFirst){
+    if(includeEmails&&isFirst){
       const emailTemplate=await callEmail(commodity, includeAttach, attachList);
       emails=[emailTemplate];
     }
@@ -1059,7 +965,7 @@ function showError(msg){ const p=document.getElementById('errorPanel'); p.textCo
 function reset(){
   document.getElementById('resultsPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='block';
-  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput','dateFromInput','dateToInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
   fitFilter='all'; supplierType='both'; currentSupplierType='both';
@@ -1067,27 +973,11 @@ function reset(){
   document.querySelector('#supplierTypePills .pill[data-val="both"]').classList.add('selected');
   // Reset mode pills back to commodity
   currentMode='commodity'; currentCompanyName='';
-  currentCompanyGeoScope='both'; currentCompanyGeoCountries='';
-  currentDateFrom=''; currentDateTo='';
-  useDateRange=false;
-  const dateToggle=document.getElementById('dateRangeToggle');
-  if(dateToggle){
-    dateToggle.classList.remove('on');
-    dateToggle.querySelector('.toggle-check').innerHTML='';
-  }
-  const dateOpts=document.getElementById('dateRangeOptions');
-  if(dateOpts) dateOpts.style.display='none';
   document.querySelectorAll('#modePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#modePills .pill[data-val="commodity"]').classList.add('selected');
-  document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.classList.remove('selected'));
-  document.querySelector('#companyGeoPills .pill[data-val="both"]').classList.add('selected');
   document.getElementById('commodityModeBlock').style.display='';
   document.getElementById('companyModeBlock').style.display='none';
   document.getElementById('sourcesBlock').style.display='';
-  document.getElementById('commodityCountriesBlock').style.display='';
-  document.getElementById('companyCountriesBlock').style.display='none';
-  document.getElementById('companyDateRangeBlock').style.display='none';
-  document.getElementById('emailCampaignBlock').style.display='';
   const launchSpan=document.querySelector('.btn-launch span'); if(launchSpan) launchSpan.textContent='FIND SUPPLIERS';
   currentCommodity=''; currentCerts=''; currentCountries=[];
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
