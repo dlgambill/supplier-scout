@@ -34,9 +34,18 @@ header { display:flex; align-items:flex-end; justify-content:space-between; bord
 
 .input-block { margin-bottom:20px; }
 .input-block label { display:block; font-size:13px; color:var(--text2); margin-bottom:8px; }
-textarea, input[type="text"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
+textarea, input[type="text"], input[type="date"] { width:100%; background:var(--surface); border:1px solid var(--border2); color:var(--text); font-family:'IBM Plex Sans',sans-serif; font-size:14px; padding:12px 14px; outline:none; resize:none; line-height:1.6; transition:border-color 0.2s; }
 textarea:focus, input:focus { border-color:var(--accent); }
 textarea::placeholder, input::placeholder { color:var(--text3); }
+
+/* Date input: monospace value, custom-tinted picker icon, no native fluff */
+input[type="date"] { font-family:'IBM Plex Mono',monospace; font-size:13px; letter-spacing:0.02em; color-scheme:dark; cursor:pointer; }
+input[type="date"]::-webkit-calendar-picker-indicator { filter:invert(0.6) sepia(1) saturate(5) hue-rotate(5deg); cursor:pointer; opacity:0.7; transition:opacity 0.2s; }
+input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:1; }
+input[type="date"]:focus { border-color:var(--accent); }
+.date-range-row { display:flex; gap:14px; margin-top:8px; flex-wrap:wrap; }
+.date-field { flex:1; min-width:170px; }
+.date-field label { display:block; font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--text3); margin-bottom:6px; }
 
 .commodity-wrap { position:relative; }
 .commodity-wrap textarea { padding-bottom:44px; }
@@ -158,7 +167,7 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.2</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.3</div>
   </header>
 
   <div id="inputPanel">
@@ -256,17 +265,17 @@ textarea::placeholder, input::placeholder { color:var(--text3); }
 
     <div class="input-block" id="companyDateRangeBlock" style="display:none;">
       <label>Evidence date range <span style="color:var(--text3)">(prefer relationships active within this window)</span></label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:4px;">
-        <div>
-          <label style="font-size:11px;color:var(--text3);">From</label>
-          <input type="date" id="dateFromInput" style="margin-top:4px;" />
+      <div class="date-range-row">
+        <div class="date-field">
+          <label>From</label>
+          <input type="date" id="dateFromInput" />
         </div>
-        <div>
-          <label style="font-size:11px;color:var(--text3);">To</label>
-          <input type="date" id="dateToInput" style="margin-top:4px;" />
+        <div class="date-field">
+          <label>To</label>
+          <input type="date" id="dateToInput" />
         </div>
       </div>
-      <div style="margin-top:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);">
+      <div style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.04em;">
         Defaults to last 2 years. Older relationships may still appear if strongly supported.
       </div>
     </div>
