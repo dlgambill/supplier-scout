@@ -167,7 +167,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.3</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.4</div>
   </header>
 
   <div id="inputPanel">
@@ -264,19 +264,24 @@ input[type="date"]:focus { border-color:var(--accent); }
     </div>
 
     <div class="input-block" id="companyDateRangeBlock" style="display:none;">
-      <label>Evidence date range <span style="color:var(--text3)">(prefer relationships active within this window)</span></label>
-      <div class="date-range-row">
-        <div class="date-field">
-          <label>From</label>
-          <input type="date" id="dateFromInput" />
-        </div>
-        <div class="date-field">
-          <label>To</label>
-          <input type="date" id="dateToInput" />
-        </div>
+      <div id="dateRangeToggle" class="toggle-row" onclick="toggleOpt('dateRange')">
+        <div class="toggle-check">&#10003;</div>
+        Filter by evidence date range
       </div>
-      <div style="margin-top:10px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.04em;">
-        Defaults to last 2 years. Older relationships may still appear if strongly supported.
+      <div id="dateRangeOptions" style="display:none;">
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--text3);letter-spacing:0.04em;margin-bottom:4px;">
+          Prefer relationships active within this window. Older relationships may still appear if strongly supported.
+        </div>
+        <div class="date-range-row">
+          <div class="date-field">
+            <label>From</label>
+            <input type="date" id="dateFromInput" />
+          </div>
+          <div class="date-field">
+            <label>To</label>
+            <input type="date" id="dateToInput" />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -447,7 +452,7 @@ input[type="date"]:focus { border-color:var(--accent); }
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both';
+let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both', useDateRange=false;
 let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 let currentMode='commodity', currentCompanyName='';
@@ -475,18 +480,6 @@ document.querySelectorAll('#modePills .pill').forEach(p=>p.addEventListener('cli
   document.getElementById('companyDateRangeBlock').style.display   = isCompany ? '' : 'none';
   document.getElementById('emailCampaignBlock').style.display      = isCompany ? 'none' : '';
   document.querySelector('.btn-launch span').textContent           = isCompany ? "FIND THEIR SUPPLIERS" : "FIND SUPPLIERS";
-
-  // Seed default dates the first time user enters company mode (last 2 years)
-  if (isCompany) {
-    const fromEl = document.getElementById('dateFromInput');
-    const toEl   = document.getElementById('dateToInput');
-    if (!fromEl.value && !toEl.value) {
-      const today = new Date();
-      const twoYearsAgo = new Date(today.getFullYear() - 2, today.getMonth(), today.getDate());
-      toEl.value   = today.toISOString().slice(0,10);
-      fromEl.value = twoYearsAgo.toISOString().slice(0,10);
-    }
-  }
 }));
 
 // Company geo pills
@@ -593,6 +586,23 @@ function toggleOpt(type){
     el.classList.toggle('on',includeAttach);
     el.querySelector('.toggle-check').innerHTML=includeAttach?'&#10003;':'';
     document.getElementById('attachOptions').style.display=includeAttach?'block':'none';
+  } else if(type==='dateRange'){
+    useDateRange=!useDateRange;
+    const el=document.getElementById('dateRangeToggle');
+    el.classList.toggle('on',useDateRange);
+    el.querySelector('.toggle-check').innerHTML=useDateRange?'&#10003;':'';
+    document.getElementById('dateRangeOptions').style.display=useDateRange?'block':'none';
+    // Seed default dates the first time the toggle is turned on (last 2 years)
+    if(useDateRange){
+      const fromEl=document.getElementById('dateFromInput');
+      const toEl=document.getElementById('dateToInput');
+      if(!fromEl.value && !toEl.value){
+        const today=new Date();
+        const twoYearsAgo=new Date(today.getFullYear()-2,today.getMonth(),today.getDate());
+        toEl.value=today.toISOString().slice(0,10);
+        fromEl.value=twoYearsAgo.toISOString().slice(0,10);
+      }
+    }
   }
 }
 
@@ -673,10 +683,15 @@ async function runSearch(){
     currentCompanyName=companyName;
     currentCommodity=companyName; // used as display title
     currentCompanyGeoCountries=document.getElementById('companyCountriesInput').value.trim();
-    currentDateFrom=document.getElementById('dateFromInput').value || '';
-    currentDateTo=document.getElementById('dateToInput').value || '';
-    if(currentDateFrom && currentDateTo && currentDateFrom > currentDateTo){
-      showError('Date range is invalid: "From" date must be on or before "To" date.');return;
+    if(useDateRange){
+      currentDateFrom=document.getElementById('dateFromInput').value || '';
+      currentDateTo=document.getElementById('dateToInput').value || '';
+      if(currentDateFrom && currentDateTo && currentDateFrom > currentDateTo){
+        showError('Date range is invalid: "From" date must be on or before "To" date.');return;
+      }
+    } else {
+      currentDateFrom='';
+      currentDateTo='';
     }
   } else {
     if(!commodity&&!pastedImageData){showError('Please describe what you are sourcing.');return;}
@@ -1054,6 +1069,14 @@ function reset(){
   currentMode='commodity'; currentCompanyName='';
   currentCompanyGeoScope='both'; currentCompanyGeoCountries='';
   currentDateFrom=''; currentDateTo='';
+  useDateRange=false;
+  const dateToggle=document.getElementById('dateRangeToggle');
+  if(dateToggle){
+    dateToggle.classList.remove('on');
+    dateToggle.querySelector('.toggle-check').innerHTML='';
+  }
+  const dateOpts=document.getElementById('dateRangeOptions');
+  if(dateOpts) dateOpts.style.display='none';
   document.querySelectorAll('#modePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#modePills .pill[data-val="commodity"]').classList.add('selected');
   document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.classList.remove('selected'));
