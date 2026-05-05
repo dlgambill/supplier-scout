@@ -326,10 +326,16 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries, dateFrom, dateTo } = req.body;
     const cleanedCommodity = cleanCommodity(commodity || '');
     const searchMode = (mode === 'company') ? 'company' : 'commodity';
     const targetCompany = (companyName || '').trim();
+
+    // Validate date range — accept only YYYY-MM-DD strings; ignore otherwise
+    const dateRx = /^\d{4}-\d{2}-\d{2}$/;
+    const validDateFrom = (dateFrom && dateRx.test(dateFrom)) ? dateFrom : '';
+    const validDateTo   = (dateTo   && dateRx.test(dateTo))   ? dateTo   : '';
+    const hasDateRange  = searchMode === 'company' && validDateFrom && validDateTo && validDateFrom <= validDateTo;
 
     let geoSelected;
 
@@ -390,6 +396,15 @@ You must NEVER return:
 - Aggregator/directory sites (ImportYeti, Panjiva, ThomasNet, Bloomberg, etc.) themselves as entities
 No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
+      // Build optional date-range section (company mode only, when both dates valid)
+      const dateRangeSection = hasDateRange ? `
+[DATE RANGE — EVIDENCE PREFERENCE]
+Strongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.
+- Rank suppliers with evidence in this window highest.
+- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.
+- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.
+` : '';
+
       supplierPrompt = `[GOAL]
 Perform deep-web research using Google Search to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
 
@@ -398,7 +413,7 @@ Perform deep-web research using Google Search to identify verified VENDORS that 
 - Required Certs: ${certText}
 - HTS Code (commodity hint): ${htsText}
 - Geography Scope: ${geoSelected}
-
+${dateRangeSection}
 [DIRECTION OF MONEY — CRITICAL]
 Money must flow FROM ${targetCompany} TO the supplier. If ${targetCompany} is the one being paid (i.e., the other party is a customer), EXCLUDE it.
 Test for every candidate: "Does ${targetCompany} write a check to this entity?" If no, exclude.
@@ -427,7 +442,8 @@ Do NOT return any of the following, regardless of how often they co-occur with "
    - site:panjiva.com "${targetCompany}"
    - "${targetCompany}" 10-K "principal suppliers" OR "key suppliers" OR "raw materials"
    - "${targetCompany}" press release partnership manufacturer
-   - "${targetCompany}" bill of lading OR shipment records OR consignor
+   - "${targetCompany}" bill of lading OR shipment records OR consignor${hasDateRange ? `
+   - When useful, narrow queries with Google's date operators (e.g. \`"${targetCompany}" supplier after:${validDateFrom} before:${validDateTo}\`) to find recent evidence.` : ''}
 2. SOURCE PRIORITY: Bills of lading naming ${targetCompany} as CONSIGNEE (not consignor), SEC 10-K "principal suppliers" sections, press releases where ${targetCompany} announces a vendor agreement, supplier diversity pages on ${targetCompany}'s own site.
 3. VALIDATE EACH CANDIDATE before including:
    a. Confirm the entity is a for-profit company that SELLS GOODS OR SERVICES.
