@@ -167,7 +167,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.2.7</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.3.0</div>
   </header>
 
   <div id="inputPanel">
@@ -388,7 +388,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div>
         <div class="section-label">// SOURCING RESULTS</div>
         <div class="results-title" id="resultsTitle"></div>
-        <div id="liveSearchBadge" style="display:none;margin-top:6px;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 8px;width:fit-content;background:rgba(46,204,113,0.07);">&#9679; GEMINI LIVE SEARCH</div>
+        <div id="liveSearchBadge" style="display:none;margin-top:6px;align-items:center;gap:6px;font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--green);border:1px solid var(--green);padding:2px 8px;width:fit-content;background:rgba(46,204,113,0.07);">&#9679; <span id="liveSearchBadgeLabel">LIVE SEARCH</span></div>
       </div>
       <div style="display:flex;align-items:center;gap:9px;flex-shrink:0;">
         <div class="results-count" id="resultsCount"></div>
@@ -397,7 +397,7 @@ input[type="date"]:focus { border-color:var(--accent); }
     </div>
 
     <div id="degradedBanner" style="display:none;background:rgba(231,76,60,0.07);border:1px solid rgba(231,76,60,0.3);padding:9px 14px;margin-bottom:10px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:#e74c3c;line-height:1.7;">
-      &#9888;&nbsp; <strong>Degraded mode</strong> — GEMINI_API_KEY not configured. Results are AI-generated from training data and may be less accurate.
+      &#9888;&nbsp; <strong>Degraded mode</strong> — live retrieval unavailable, results were generated from training data and may be less accurate.
     </div>
     <div style="background:rgba(232,160,32,0.06);border:1px solid rgba(232,160,32,0.25);padding:9px 14px;margin-bottom:14px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text3);line-height:1.7;">
       &#9888;&nbsp; <span style="color:var(--accent);">Always verify suppliers before outreach.</span> Tariff rates are AI-estimated — verify with a licensed customs broker before making sourcing decisions.
@@ -473,10 +473,10 @@ let currentContinents=[];
 let currentDateFrom='', currentDateTo='';
 
 const STEPS={
-  domestic:["Running live Google searches","Scanning ThomasNet & supplier directories","Extracting & verifying companies","Scoring supplier fit"],
-  foreign:["Running live Google searches","Scanning international trade directories","Extracting & verifying companies","Scoring supplier fit"],
-  both:["Running live Google searches","Scanning domestic & international directories","Extracting & verifying companies","Scoring supplier fit"],
-  company:["Searching ImportYeti, Panjiva & trade records","Checking SEC filings & press releases","Extracting verified vendor names","Scoring supplier fit"]
+  domestic:["Searching the web in real time","Aggregating supplier directories & company sites","Extracting & verifying companies","Scoring supplier fit"],
+  foreign:["Searching the web in real time","Aggregating international trade sources","Extracting & verifying companies","Scoring supplier fit"],
+  both:["Searching the web in real time","Aggregating domestic & international sources","Extracting & verifying companies","Scoring supplier fit"],
+  company:["Searching trade records, filings & press","Cross-referencing supplier diversity pages","Extracting verified vendor names","Scoring supplier fit"]
 };
 
 // Mode pills (Commodity vs Company search)
@@ -669,11 +669,17 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
+  const badge=document.getElementById('liveSearchBadge');
+  const badgeLabel=document.getElementById('liveSearchBadgeLabel');
   if(data.usedSerpApi){
-    document.getElementById('liveSearchBadge').style.display='inline-flex';
+    let label='LIVE SEARCH';
+    if(data.usedProvider==='perplexity') label='PERPLEXITY SONAR';
+    else if(data.usedProvider==='gemini') label='GEMINI LIVE SEARCH';
+    if(badgeLabel) badgeLabel.textContent=label;
+    badge.style.display='inline-flex';
     document.getElementById('degradedBanner').style.display='none';
   } else {
-    document.getElementById('liveSearchBadge').style.display='none';
+    badge.style.display='none';
     document.getElementById('degradedBanner').style.display='block';
   }
   return parseClaudeJSON(data.claudeData);
