@@ -233,7 +233,10 @@ function isSelfOrSubsidiary(name, targetCompany) {
 
 
 // ── Gemini call with model cascade ────────────────────────────────────────
-const GEMINI_MODELS = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+// Quality-first cascade. Pro leads — Flash variants only kick in if Pro is rate-limited
+// or fails. Flash-Lite was removed because its grounded-search behavior on long prompts
+// is unreliable (token exhaustion, empty content blocks).
+const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'];
 
 async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
   for (const model of GEMINI_MODELS) {
