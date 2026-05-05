@@ -529,54 +529,68 @@ app.post('/api/search', async (req, res) => {
       ? sources.map(s => `"${cleanedCommodity}" site:${s.toLowerCase().replace(/\s/g,'')}.com`).join(', ')
       : `"${cleanedCommodity}" site:thomasnet.com`;
 
-    let systemInstruction;
-    let supplierPrompt;
+    // Build engine-specific prompts. Different models respond differently to the same
+    // instructions: Gemini does well with strict "HARD-FAIL" framing, Perplexity Sonar
+    // applies it too literally and returns []. Claude has no live search so multi-search
+    // instructions are wasted on it.
+    function buildPrompts(engine) {
+      const isPerplexity = engine === 'perplexity';
+      const isClaude = engine === 'claude';
 
-    if (searchMode === 'company') {
-      // ─── COMPANY SEARCH: find vendors/suppliers TO the named company ─────
-      if (!targetCompany) {
-        return res.status(400).json({ error: 'companyName is required for company search mode' });
-      }
+      // Strict-vs-permissive language toggles
+      const hardFail = isPerplexity ? 'should not be included' : 'are HARD-FAILS';
+      const zeroTolerance = isPerplexity ? '[INCLUSION CRITERIA]' : '[OUTPUT RULES - ZERO TOLERANCE]';
+      const mustCiteEvidence = isPerplexity
+        ? 'Each entry should describe evidence found (e.g. mention in 10-K, ImportYeti record, press release).'
+        : 'Each entry needs specific evidence (named in a filing, listed on a supplier diversity page, appears in import records).';
+      const refusalGuard = isPerplexity
+        ? `If your first search returns mostly the target's customers or distributors, run 2-3 more searches with different queries before concluding. It is acceptable to include suppliers with moderate evidence (single press release, single news mention) ranked as "low" or "medium" fit. Returning fewer than 5 suppliers when the target has any public supplier disclosures suggests insufficient research depth.`
+        : `Returning an empty array or a diagnostic explanation of why you couldn't find suppliers is a failure mode — research harder.`;
 
-      systemInstruction = `You are a Supply Chain Intelligence Analyst. Your job is to research and return a JSON array of verified VENDORS and SUPPLIERS — companies that sell to a target company and appear in the target's accounts payable.
+      let sysInstruction, prompt;
 
-RESEARCH METHODOLOGY: Run multiple independent searches across different source types before concluding. If your first search returns only the target's customers/distributors, search again with different queries. Try at least these angles before giving up:
-1. Target's own supplier diversity / approved vendor pages (site:[targetdomain].com supplier OR vendor OR "approved supplier")
+      if (searchMode === 'company') {
+        if (!targetCompany) return null;
+
+        sysInstruction = `You are a Supply Chain Intelligence Analyst. Your job is to research and return a JSON array of verified VENDORS and SUPPLIERS — companies that sell to a target company and appear in the target's accounts payable.
+
+RESEARCH METHODOLOGY: Run multiple independent searches across different source types before concluding. If your first search returns only the target's customers/distributors, search again with different queries. Try at least these angles${isClaude ? ' from your training knowledge' : ''}:
+1. Target's own supplier diversity / approved vendor pages
 2. SEC filings: "[target] 10-K principal suppliers" / "[target] 10-K key suppliers"
-3. Trade records: site:importyeti.com [target], site:panjiva.com [target]
-4. Press releases: "[target] announces partnership with" / "[target] selects [vendor]"
+3. Trade records: ImportYeti / Panjiva entries naming the target as consignee
+4. Press releases announcing supplier partnerships
 5. News articles naming specific vendors who supply the target
 6. Industry reports identifying the target's supply chain
 
-Major companies (publicly traded, large private firms) ALWAYS have publicly disclosed supplier information. If your initial searches return only retailers/distributors of the target's products, that means you searched the wrong direction — pivot to the sources above.
+Major companies (publicly traded, large private firms) typically have publicly disclosed supplier information. If your initial searches return only retailers/distributors of the target's products, pivot to the sources above.
 
-Aim for 10–20 verified suppliers per query. Returning an empty array or a diagnostic explanation of why you couldn't find suppliers is a failure mode — research harder.
+Aim for 10–20 verified suppliers per query. ${refusalGuard}
 
 Exclude: customers (entities the target sells to), competitors, government agencies, military branches, universities, research labs, non-profits, news outlets, analyst firms, and aggregator websites themselves (ImportYeti, Panjiva, ThomasNet, Bloomberg, etc.).
 
 Output format: raw JSON array only. No markdown code blocks. No preamble. No explanatory notes. Start with [ and end with ].`;
 
-      // Build optional date-range section (company mode only, when both dates valid)
-      const dateRangeSection = hasDateRange
-        ? `\n[DATE RANGE — EVIDENCE PREFERENCE]\nStrongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.\n- Rank suppliers with evidence in this window highest.\n- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.\n- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.\n`
-        : '';
+        // Build geography directive — make this a hard rule, not a hint
+        let geoDirective = '';
+        if (companyGeoScope === 'domestic') {
+          geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered or with primary manufacturing in the UNITED STATES. Foreign suppliers — even if they have US offices — ${hardFail}. The location field of every result must end with a US state (e.g. "Detroit, MI" or "Detroit, MI, USA").`;
+        } else if (companyGeoScope === 'foreign') {
+          geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered OUTSIDE the United States. US-based suppliers ${hardFail}. The location field must clearly indicate a non-US country.`;
+        }
+        if (validContinents.length) {
+          const continentNames = validContinents.map(c => CONTINENT_LABELS[c]).join(', ');
+          geoDirective += `\nGeographic scope is further restricted to these continents/regions: ${continentNames}. Suppliers outside these regions ${hardFail}.`;
+        }
+        if (companyGeoCountries && companyGeoCountries.trim()) {
+          geoDirective += `\nFocus particularly on these countries: ${companyGeoCountries.trim()}.`;
+        }
 
-      // Build geography directive — make this a hard rule, not a hint
-      let geoDirective = '';
-      if (companyGeoScope === 'domestic') {
-        geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered or with primary manufacturing in the UNITED STATES. Foreign suppliers — even if they have US offices — are HARD-FAILS. Do not include them. The location field of every result must end with a US state (e.g. "Detroit, MI" or "Detroit, MI, USA").`;
-      } else if (companyGeoScope === 'foreign') {
-        geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered OUTSIDE the United States. US-based suppliers are HARD-FAILS. The location field must clearly indicate a non-US country.`;
-      }
-      if (validContinents.length) {
-        const continentNames = validContinents.map(c => CONTINENT_LABELS[c]).join(', ');
-        geoDirective += `\nGeographic scope is further restricted to these continents/regions: ${continentNames}. Suppliers outside these regions are hard-fails.`;
-      }
-      if (companyGeoCountries && companyGeoCountries.trim()) {
-        geoDirective += `\nFocus particularly on these countries: ${companyGeoCountries.trim()}.`;
-      }
+        // Build optional date-range section
+        const dateRangeSection = hasDateRange
+          ? `\n[DATE RANGE — EVIDENCE PREFERENCE]\nStrongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.\n- Rank suppliers with evidence in this window highest.\n- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.\n- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.\n`
+          : '';
 
-      supplierPrompt = `[GOAL]
+        prompt = `[GOAL]
 Perform deep web research to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
 
 [TARGET COMPANY]
@@ -592,23 +606,18 @@ This means: for retailers (Walmart, Target, Costco), the brands they stock (P&G,
 What is NOT valid: ${targetCompany}'s customers (entities ${targetCompany} sells to), competitors, or end consumers.
 Test: "Does ${targetCompany} write a check or wire payment to this entity?" If yes, valid. If no, exclude.
 
-[HARD EXCLUSIONS — ZERO TOLERANCE]
-Do NOT return any of the following, regardless of how often they co-occur with "${targetCompany}":
+[HARD EXCLUSIONS]
+Do not return any of the following, regardless of how often they co-occur with "${targetCompany}":
 - Customers of ${targetCompany} (entities that BUY from ${targetCompany})
-- Competitors or peer companies (companies that sell similar products to similar customers)
-- Government agencies (Department of Defense, FAA, FDA, EPA, NASA, USDA, GSA, state agencies, foreign equivalents)
-- Military branches (Army, Navy, Air Force, Marines, Coast Guard, foreign equivalents)
-- Universities, colleges, research labs, or academic institutions (Stanford, MIT, Fraunhofer, etc.)
-- Non-profit organizations, foundations, industry associations, standards bodies (ISO, ASTM, IEEE, SAE)
-- Certifying bodies, auditors, or regulators
-- News outlets, analyst firms, trade publications, or rating agencies (Reuters, Bloomberg, Gartner, Moody's)
-- Investors, venture capital firms, private equity firms, or banks (unless clearly a paid service vendor)
-- Law firms, consultancies, or PR firms (unless explicitly named as a paid vendor in filings)
-- The aggregator websites themselves (ImportYeti, Panjiva, ThomasNet, Datamyne, SEC.gov)
+- Competitors or peer companies
+- Government agencies, military branches, universities, research labs
+- Non-profits, foundations, industry associations, standards bodies
+- News outlets, analyst firms, trade publications
+- The aggregator websites themselves (ImportYeti, Panjiva, ThomasNet, Bloomberg)
 - ${targetCompany} itself, its subsidiaries, or its parent company
 
 [RESEARCH PROTOCOL]
-1. EXECUTE SEARCH:
+1. Search across these angles:
    - "${targetCompany}" supplier
    - "${targetCompany}" vendor
    - "${targetCompany}" "supplied by" OR "manufactured by" OR "contract manufacturer"
@@ -617,20 +626,16 @@ Do NOT return any of the following, regardless of how often they co-occur with "
    - "${targetCompany}" 10-K "principal suppliers" OR "key suppliers" OR "raw materials"
    - "${targetCompany}" press release partnership manufacturer
    - "${targetCompany}" bill of lading OR shipment records OR consignor${hasDateRange ? `
-   - When useful, narrow queries with Google's date operators (e.g. \`"${targetCompany}" supplier after:${validDateFrom} before:${validDateTo}\`) to find recent evidence.` : ''}
-2. SOURCE PRIORITY: Bills of lading naming ${targetCompany} as CONSIGNEE (not consignor), SEC 10-K "principal suppliers" sections, press releases where ${targetCompany} announces a vendor agreement, supplier diversity pages on ${targetCompany}'s own site.
-3. VALIDATE EACH CANDIDATE before including:
-   a. Confirm the entity is a for-profit company that SELLS GOODS OR SERVICES.
-   b. Confirm the evidence shows ${targetCompany} as the BUYER, not the seller.
-   c. Confirm the entity is NOT in the hard exclusion list above.
-4. EVIDENCE: For each supplier returned, fitReason MUST cite specific evidence and direction (e.g., "ImportYeti shows 14 shipments with ${targetCompany} as consignee, 2023-2024" or "Named in ${targetCompany}'s 2024 10-K as supplier of titanium fasteners").
+   - When useful, narrow queries with date operators (e.g. \`"${targetCompany}" supplier after:${validDateFrom} before:${validDateTo}\`).` : ''}
+2. SOURCE PRIORITY: Bills of lading naming ${targetCompany} as CONSIGNEE, SEC 10-K "principal suppliers" sections, press releases announcing supplier agreements, and the target's own supplier diversity pages.
+3. VALIDATE EACH CANDIDATE: confirm it's a for-profit company that sells goods or services, confirm money flows from ${targetCompany} to it, confirm it's not in the exclusion list.
+4. EVIDENCE: ${mustCiteEvidence}
 
-[OUTPUT RULES]
+${zeroTolerance}
 - RETURN ONLY A JSON ARRAY.
 - NO MARKDOWN: Do not use \`\`\`json or any backticks. Start with [ and end with ].
-- TARGET 10–20 RESULTS: Aim to return 10–20 verified suppliers. Major buyers like Walmart, Tesla, Boeing, P&G, Apple have publicly-disclosed supplier lists, supplier diversity pages, ImportYeti records, and 10-K filings — use them. If after diligent research you can only find 5, return 5; the goal is real research effort, not minimum entries.
-- EVIDENCE STANDARD: Each entry needs specific evidence (named in a filing, listed on a supplier diversity page, appears in import records). A supplier mentioned in a single news article is acceptable. Hard-fabricated names are not acceptable.
-- TOKEN MANAGEMENT: Once you have identified 20 verified suppliers, stop searching immediately and generate the JSON output.
+- TARGET 10–20 RESULTS: Major buyers like Walmart, Tesla, Boeing, P&G, Apple have publicly-disclosed supplier lists, supplier diversity pages, ImportYeti records, and 10-K filings — use them.
+- TOKEN MANAGEMENT: Once you have identified 20 verified suppliers, stop searching and generate the JSON output.
 
 [JSON SCHEMA]
 [
@@ -652,13 +657,14 @@ Do NOT return any of the following, regardless of how often they co-occur with "
 
 ${supplierTypeText} Begin JSON output now.`;
 
-    } else {
-      // ─── COMMODITY SEARCH: original flow ─────────────────────────────────
-      systemInstruction = `You are a Lead Sourcing & Procurement Analyst. You provide raw data in JSON format.
-CRITICAL: You are currently restricted to ${geoSelected} suppliers only. If a company is not headquartered or manufacturing in ${geoSelected}, it is a hard-fail; do not include it.
+      } else {
+        // ─── COMMODITY SEARCH ──────────────────────────────────────────────
+        sysInstruction = `You are a Lead Sourcing & Procurement Analyst. You provide raw data in JSON format.
+CRITICAL: You are currently restricted to ${geoSelected} suppliers only. If a company is not headquartered or manufacturing in ${geoSelected}, it ${hardFail}; do not include it.
+${refusalGuard}
 No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
-      supplierPrompt = `[GOAL]
+        prompt = `[GOAL]
 Perform deep web research to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
 
 [COMMODITY DATA]
@@ -668,15 +674,15 @@ Perform deep web research to identify verified ${geoSelected} manufacturers/dist
 - Geography Scope: ${geoSelected} ONLY. (Strictly exclude all entities outside ${geoSelected}).
 
 [RESEARCH PROTOCOL]
-1. EXECUTE SEARCH: Use the search tool to query: "${cleanedCommodity} manufacturer ${geoSelected}", "${cleanedCommodity} domestic supplier", and ${sourceInstructions}.
-2. VALIDATE ENTITY: You must identify the SPECIFIC COMPANY NAME. If a search result is a list or directory (e.g. Alibaba, ThomasNet, Kompass), you MUST extract the names of the companies within that list.
-3. VERIFY LOCATION: Confirm the Contact or About page lists a physical address in ${geoSelected}. Discard any results outside ${geoSelected}.
-4. PRIORITIZE: Rank results by Manufacturer first, then Distributor/Master Distributor.
+1. Search across these angles: "${cleanedCommodity} manufacturer ${geoSelected}", "${cleanedCommodity} domestic supplier", and ${sourceInstructions}.
+2. VALIDATE ENTITY: Identify the SPECIFIC COMPANY NAME. If a search result is a list or directory (Alibaba, ThomasNet, Kompass), extract the names of the companies within that list.
+3. VERIFY LOCATION: Confirm the Contact or About page lists a physical address in ${geoSelected}. Discard results outside ${geoSelected}.
+4. PRIORITIZE: Rank Manufacturer first, then Distributor/Master Distributor.
 
-[OUTPUT RULES - ZERO TOLERANCE]
+${zeroTolerance}
 - RETURN ONLY A JSON ARRAY.
 - NO MARKDOWN: Do not use \`\`\`json or any backticks. Start with [ and end with ].
-- NO PLACEHOLDERS: If you cannot find a specific company name, do not create an entry.
+- TARGET 10–15 RESULTS: ${mustCiteEvidence}
 - NO EXPLANATIONS: Do not explain why a search failed or succeeded. If 0 results are found, return [].
 - TOKEN MANAGEMENT: Once you have identified 15 verified companies, stop searching immediately and generate the JSON output.
 
@@ -699,7 +705,16 @@ Perform deep web research to identify verified ${geoSelected} manufacturers/dist
 ]
 
 GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any companies outside ${geoSelected}. ${supplierTypeText} Begin JSON output now.`;
+      }
+
+      return { systemInstruction: sysInstruction, supplierPrompt: prompt };
     }
+
+    // Validate company mode has a target
+    if (searchMode === 'company' && !targetCompany) {
+      return res.status(400).json({ error: 'companyName is required for company search mode' });
+    }
+
 
     let responseText;
     let perplexityCitations = [];
@@ -709,62 +724,89 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
     // Image searches must use Gemini (Perplexity API doesn't accept images).
     const hasImage = !!(imageData && imageType);
 
-    // Provider 1: Perplexity Sonar (primary for retrieval-heavy searches)
-    if (!hasImage && perplexityKey) {
+    // Helper that runs a single Gemini model with engine='gemini' prompts
+    async function tryGeminiModel(modelName) {
+      const prompts = buildPrompts('gemini');
+      console.log(`Trying Gemini model: ${modelName}`);
+      const text = await callGeminiModel(prompts.supplierPrompt, geminiKey, modelName, scope, countries, prompts.systemInstruction);
+      if (text) {
+        console.log(`${modelName} response received (first 200 chars): ${text.substring(0, 200)}`);
+      }
+      return text;
+    }
+
+    // Provider 1: Gemini 2.5 Pro — empirically the strongest for our prompt structure.
+    // Returns 10-20 suppliers consistently on both modes.
+    if (geminiKey) {
       try {
-        console.log('Calling Perplexity Sonar...');
-        const result = await callPerplexity(supplierPrompt, perplexityKey, systemInstruction);
+        responseText = await tryGeminiModel('gemini-2.5-pro');
+        if (responseText) usedProvider = 'gemini';
+      } catch (err) {
+        console.warn(`gemini-2.5-pro failed: ${err.message}. Trying Perplexity next...`);
+      }
+    }
+
+    // Provider 2: Perplexity Sonar Pro with permissive prompt — strong when it works,
+    // and a different retrieval pipeline that may surface suppliers Gemini missed.
+    // Skipped for image searches (Perplexity API doesn't accept images).
+    if (!responseText && !hasImage && perplexityKey) {
+      try {
+        const prompts = buildPrompts('perplexity');
+        console.log('Calling Perplexity Sonar Pro...');
+        const result = await callPerplexity(prompts.supplierPrompt, perplexityKey, prompts.systemInstruction);
         perplexityRaw = result.text;
         perplexityCitations = result.citations || [];
-        // Log a sample so we can debug why suppliers might be zero
         console.log('=== PERPLEXITY RAW (first 800 chars) ===');
         console.log(perplexityRaw.substring(0, 800));
         console.log('=== END PERPLEXITY RAW ===');
-        // Quick pre-flight: try parsing and count suppliers
         let preflightSuppliers = null;
-        try {
-          preflightSuppliers = parseJSON(perplexityRaw);
-        } catch (parseErr) {
-          console.warn('Perplexity output failed JSON pre-flight parse:', parseErr.message);
-        }
+        try { preflightSuppliers = parseJSON(perplexityRaw); }
+        catch (parseErr) { console.warn('Perplexity output failed JSON pre-flight parse:', parseErr.message); }
         const preflightCount = Array.isArray(preflightSuppliers) ? preflightSuppliers.length : -1;
         console.log(`Perplexity pre-flight supplier count: ${preflightCount}`);
         if (preflightCount > 0) {
           responseText = perplexityRaw;
           usedProvider = 'perplexity';
         } else {
-          console.warn('Perplexity returned 0 parseable suppliers — falling through to Gemini');
+          console.warn('Perplexity returned 0 parseable suppliers — falling through to Gemini Flash');
         }
       } catch (perplexityErr) {
         console.error('Perplexity failed:', perplexityErr.message);
       }
     }
 
-    // Provider 2: Gemini with Google Search grounding (fallback or image searches)
+    // Provider 3: Gemini 2.5 Flash — same family as Pro, smaller. Good when Pro is overloaded.
     if (!responseText && geminiKey) {
       try {
-        console.log('Calling Gemini with Google Search grounding...');
-        responseText = await callGemini(supplierPrompt, geminiKey, scope, countries, systemInstruction);
-        usedProvider = 'gemini';
-        console.log('Gemini response received');
-      } catch (geminiErr) {
-        console.error('Gemini failed:', geminiErr.message);
-        responseText = null;
+        responseText = await tryGeminiModel('gemini-2.5-flash');
+        if (responseText) usedProvider = 'gemini';
+      } catch (err) {
+        console.warn(`gemini-2.5-flash failed: ${err.message}. Trying Gemini 1.5 Flash...`);
       }
     }
 
-    // If Gemini also failed/returned nothing but we have Perplexity raw output, use it anyway
-    // (better to return what we have than nothing)
+    // Provider 4: Gemini 1.5 Flash — last live-search fallback.
+    if (!responseText && geminiKey) {
+      try {
+        responseText = await tryGeminiModel('gemini-1.5-flash');
+        if (responseText) usedProvider = 'gemini';
+      } catch (err) {
+        console.warn(`gemini-1.5-flash failed: ${err.message}.`);
+      }
+    }
+
+    // If everything failed but we have Perplexity raw output, use it anyway
     if (!responseText && perplexityRaw) {
-      console.log('Falling back to Perplexity raw output despite low pre-flight count');
+      console.log('All Gemini models failed — using Perplexity raw output despite low pre-flight count');
       responseText = perplexityRaw;
       usedProvider = 'perplexity';
     }
 
-    // Provider 3: Claude Haiku (final fallback, no live web)
+    // Provider 5: Claude Haiku — offline-knowledge final fallback (no live web).
     if (!responseText && anthropicKey) {
+      const prompts = buildPrompts('claude');
       console.log('Using Claude fallback...');
-      responseText = await callClaude(supplierPrompt, anthropicKey, true);
+      responseText = await callClaude(prompts.supplierPrompt, anthropicKey, true);
       usedProvider = 'claude';
     }
 
@@ -963,10 +1005,12 @@ Return ONLY a valid JSON object. No markdown. No preamble.`;
 
 // ── Start ──────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  const hasGemini    = !!process.env.GEMINI_API_KEY;
-  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
+  const hasGemini     = !!process.env.GEMINI_API_KEY;
+  const hasAnthropic  = !!process.env.ANTHROPIC_API_KEY;
+  const hasPerplexity = !!process.env.PERPLEXITY_API_KEY;
   console.log(`SupplierScout running on port ${PORT}`);
-  console.log(`Gemini:  ${hasGemini    ? '✓ configured (primary)'  : '✗ not set'}`);
-  console.log(`Claude:  ${hasAnthropic ? '✓ configured (fallback)' : '✗ not set'}`);
+  console.log(`Gemini:     ${hasGemini     ? '✓ configured (primary)'  : '✗ not set'}`);
+  console.log(`Perplexity: ${hasPerplexity ? '✓ configured (fallback)' : '✗ not set'}`);
+  console.log(`Claude:     ${hasAnthropic  ? '✓ configured (fallback)' : '✗ not set'}`);
   if (!hasGemini) console.log('⚠ Add GEMINI_API_KEY to Railway for live search grounding');
 });
