@@ -167,7 +167,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.4.0</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.4.1</div>
   </header>
 
   <div id="inputPanel">
@@ -367,6 +367,18 @@ input[type="date"]:focus { border-color:var(--accent); }
           <input type="text" id="attachInput" placeholder="e.g. spec sheet, engineering drawing, RFQ" />
         </div>
       </div>
+      <div class="input-block">
+        <div id="dueDateToggle" class="toggle-row" onclick="toggleOpt('dueDate')">
+          <div class="toggle-check">&#10003;</div>
+          Include pricing due date
+        </div>
+        <div id="dueDateOptions" style="display:none;margin-top:10px;">
+          <label style="margin-bottom:8px;display:block;font-size:13px;color:var(--text2);">Please provide pricing by <span style="color:var(--text3);font-size:12px">(appears in the email body)</span></label>
+          <div class="date-field" style="max-width:220px;">
+            <input type="date" id="dueDateInput" />
+          </div>
+        </div>
+      </div>
     </div>
     </div>
 
@@ -464,7 +476,7 @@ input[type="date"]:focus { border-color:var(--accent); }
 <div class="toast" id="toast"></div>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
-let suppliers=[], emails=[], includeEmails=true, includeAttach=false, fitFilter='all', supplierType='both', useDateRange=false;
+let suppliers=[], emails=[], includeEmails=true, includeAttach=false, includeDueDate=false, fitFilter='all', supplierType='both', useDateRange=false;
 let pastedImageData=null, pastedImageType=null;
 let currentCommodity='', currentCerts='', currentCountries=[], currentHts='', currentSources=[], currentSupplierType='both';
 let currentMode='commodity', currentCompanyName='';
@@ -605,6 +617,12 @@ function toggleOpt(type){
     el.classList.toggle('on',includeAttach);
     el.querySelector('.toggle-check').innerHTML=includeAttach?'&#10003;':'';
     document.getElementById('attachOptions').style.display=includeAttach?'block':'none';
+  } else if(type==='dueDate'){
+    includeDueDate=!includeDueDate;
+    const el=document.getElementById('dueDateToggle');
+    el.classList.toggle('on',includeDueDate);
+    el.querySelector('.toggle-check').innerHTML=includeDueDate?'&#10003;':'';
+    document.getElementById('dueDateOptions').style.display=includeDueDate?'block':'none';
   } else if(type==='dateRange'){
     useDateRange=!useDateRange;
     const el=document.getElementById('dateRangeToggle');
@@ -685,8 +703,8 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
   return parseClaudeJSON(data.claudeData);
 }
 
-async function callEmail(commodity, includeAttach, attachList){
-  const body={commodity, includeAttach, attachList};
+async function callEmail(commodity, includeAttach, attachList, dueDate){
+  const body={commodity, includeAttach, attachList, dueDate: dueDate||''};
   const res=await fetch('/api/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
@@ -744,6 +762,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   const wantEmails = includeEmails && currentMode !== 'company';
 
   const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
+  const dueDate=includeDueDate?document.getElementById('dueDateInput').value.trim():'';
   const stepKey = (currentMode === 'company') ? 'company' : searchScope;
   const baseSteps=[...STEPS[stepKey]];
   if(wantEmails&&isFirst) baseSteps.push('Drafting email campaign');
@@ -781,7 +800,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     }
 
     if(wantEmails&&isFirst){
-      const emailTemplate=await callEmail(commodity, includeAttach, attachList);
+      const emailTemplate=await callEmail(commodity, includeAttach, attachList, dueDate);
       emails=[emailTemplate];
     }
 
@@ -1085,7 +1104,7 @@ function showError(msg){ const p=document.getElementById('errorPanel'); p.textCo
 function reset(){
   document.getElementById('resultsPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='block';
-  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput','dateFromInput','dateToInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput','dateFromInput','dateToInput','dueDateInput','attachInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
   fitFilter='all'; supplierType='both'; currentSupplierType='both';
@@ -1105,6 +1124,15 @@ function reset(){
   }
   const dateOpts=document.getElementById('dateRangeOptions');
   if(dateOpts) dateOpts.style.display='none';
+  // Reset attach + due-date toggles
+  includeAttach=false; includeDueDate=false;
+  ['attachToggle','dueDateToggle'].forEach(id=>{
+    const t=document.getElementById(id);
+    if(t){ t.classList.remove('on'); const c=t.querySelector('.toggle-check'); if(c) c.innerHTML=''; }
+  });
+  ['attachOptions','dueDateOptions'].forEach(id=>{
+    const o=document.getElementById(id); if(o) o.style.display='none';
+  });
   document.querySelectorAll('#modePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#modePills .pill[data-val="commodity"]').classList.add('selected');
   document.querySelectorAll('#companyGeoPills .pill').forEach(p=>p.classList.remove('selected'));
