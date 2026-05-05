@@ -166,6 +166,92 @@ function filterByScope(suppliers, scope, countries, selectedCountries) {
   return suppliers;
 }
 
+// ── Continent / region classification ─────────────────────────────────────
+// Used by company-mode continent filter. Country names are uppercased and matched
+// against the trailing token of supplier.location (e.g. "Frankfurt, Germany" -> "GERMANY").
+const CONTINENT_COUNTRIES = {
+  north_america: new Set([
+    'USA','UNITED STATES','UNITED STATES OF AMERICA','U.S.A','U.S','US',
+    'CANADA','MEXICO','GUATEMALA','HONDURAS','EL SALVADOR','NICARAGUA',
+    'COSTA RICA','PANAMA','BELIZE','CUBA','HAITI','DOMINICAN REPUBLIC',
+    'JAMAICA','TRINIDAD AND TOBAGO','BAHAMAS','BARBADOS','PUERTO RICO'
+  ]),
+  south_america: new Set([
+    'BRAZIL','ARGENTINA','CHILE','PERU','COLOMBIA','VENEZUELA','ECUADOR',
+    'BOLIVIA','PARAGUAY','URUGUAY','GUYANA','SURINAME','FRENCH GUIANA'
+  ]),
+  europe: new Set([
+    'UNITED KINGDOM','UK','GREAT BRITAIN','ENGLAND','SCOTLAND','WALES','IRELAND',
+    'GERMANY','FRANCE','ITALY','SPAIN','PORTUGAL','NETHERLANDS','BELGIUM',
+    'LUXEMBOURG','SWITZERLAND','AUSTRIA','POLAND','CZECH REPUBLIC','CZECHIA',
+    'SLOVAKIA','HUNGARY','ROMANIA','BULGARIA','GREECE','SWEDEN','NORWAY',
+    'DENMARK','FINLAND','ICELAND','ESTONIA','LATVIA','LITHUANIA','UKRAINE',
+    'BELARUS','MOLDOVA','SERBIA','CROATIA','SLOVENIA','BOSNIA AND HERZEGOVINA',
+    'BOSNIA','MONTENEGRO','NORTH MACEDONIA','MACEDONIA','ALBANIA','KOSOVO',
+    'CYPRUS','MALTA','RUSSIA'
+  ]),
+  asia: new Set([
+    'CHINA','JAPAN','SOUTH KOREA','KOREA','NORTH KOREA','TAIWAN','HONG KONG',
+    'MACAU','MONGOLIA','INDIA','PAKISTAN','BANGLADESH','SRI LANKA','NEPAL',
+    'BHUTAN','MALDIVES','THAILAND','VIETNAM','CAMBODIA','LAOS','MYANMAR',
+    'BURMA','MALAYSIA','SINGAPORE','INDONESIA','PHILIPPINES','BRUNEI',
+    'EAST TIMOR','TIMOR-LESTE','KAZAKHSTAN','UZBEKISTAN','TURKMENISTAN',
+    'KYRGYZSTAN','TAJIKISTAN','AFGHANISTAN'
+  ]),
+  middle_east: new Set([
+    'UAE','UNITED ARAB EMIRATES','DUBAI','ABU DHABI','SAUDI ARABIA','ISRAEL',
+    'TURKEY','TÜRKIYE','IRAN','IRAQ','SYRIA','LEBANON','JORDAN','KUWAIT',
+    'QATAR','BAHRAIN','OMAN','YEMEN','PALESTINE'
+  ]),
+  africa: new Set([
+    'SOUTH AFRICA','EGYPT','MOROCCO','TUNISIA','ALGERIA','LIBYA','SUDAN',
+    'ETHIOPIA','KENYA','TANZANIA','UGANDA','GHANA','NIGERIA','SENEGAL',
+    'CÔTE D\'IVOIRE','IVORY COAST','CAMEROON','ANGOLA','MOZAMBIQUE','ZIMBABWE',
+    'ZAMBIA','BOTSWANA','NAMIBIA','RWANDA','BURUNDI','MADAGASCAR','MAURITIUS',
+    'SOMALIA','ERITREA','DJIBOUTI','MALI','BURKINA FASO','NIGER','CHAD',
+    'CONGO','DEMOCRATIC REPUBLIC OF THE CONGO','DRC','GABON','BENIN','TOGO',
+    'GUINEA','SIERRA LEONE','LIBERIA','GAMBIA','MAURITANIA'
+  ]),
+  oceania: new Set([
+    'AUSTRALIA','NEW ZEALAND','PAPUA NEW GUINEA','FIJI','SAMOA','TONGA',
+    'VANUATU','SOLOMON ISLANDS'
+  ])
+};
+
+const CONTINENT_LABELS = {
+  north_america: 'North America',
+  south_america: 'South America',
+  europe: 'Europe',
+  asia: 'Asia',
+  middle_east: 'Middle East',
+  africa: 'Africa',
+  oceania: 'Oceania'
+};
+
+// Determine which continent (if any) a location belongs to.
+// Returns continent key like 'europe', or null if it can't be classified.
+function classifyContinent(location) {
+  if (!location) return null;
+  const upper = location.toUpperCase();
+  // Check trailing comma-separated token first (most common: "City, Country")
+  const parts = upper.split(',').map(p => p.trim()).filter(Boolean);
+  const candidates = parts.slice(-2); // last two tokens, in case it's "City, State, Country"
+  for (const candidate of candidates.reverse()) {
+    for (const [continent, countries] of Object.entries(CONTINENT_COUNTRIES)) {
+      if (countries.has(candidate)) return continent;
+    }
+  }
+  // Fall back to substring match against the full uppercased string
+  for (const [continent, countries] of Object.entries(CONTINENT_COUNTRIES)) {
+    for (const country of countries) {
+      // Use word boundaries to avoid false matches (e.g. "Indiana" matching "INDIA")
+      const rx = new RegExp(`\\b${country.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (rx.test(upper)) return continent;
+    }
+  }
+  return null;
+}
+
 // ── Non-supplier exclusion patterns for company-search mode ─────────────────
 // These match entities that show up in search results around a target company
 // but are not vendors (customers, regulators, schools, news, etc).
@@ -343,7 +429,7 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries, dateFrom, dateTo } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries, companyContinents, dateFrom, dateTo } = req.body;
     const cleanedCommodity = cleanCommodity(commodity || '');
     const searchMode = (mode === 'company') ? 'company' : 'commodity';
     const targetCompany = (companyName || '').trim();
@@ -355,18 +441,27 @@ app.post('/api/search', async (req, res) => {
     const hasDateRange  = searchMode === 'company' && validDateFrom && validDateTo && validDateFrom <= validDateTo;
 
     let geoSelected;
+    let validContinents = [];
 
     if (searchMode === 'company') {
-      // Company mode uses a separate geo control: 'domestic' / 'foreign' / 'both' + optional free-text countries
+      // Company mode geo: scope (domestic/foreign/both) + optional continents + optional country list
       const extraCountries = (companyGeoCountries || '').trim();
-      if (companyGeoScope === 'domestic') {
-        geoSelected = 'United States';
-      } else if (companyGeoScope === 'foreign') {
-        geoSelected = extraCountries ? extraCountries : 'Any country except the United States';
-      } else {
-        // 'both' or unspecified
-        geoSelected = extraCountries ? `United States and ${extraCountries}` : 'Global (no restriction)';
-      }
+      validContinents = Array.isArray(companyContinents)
+        ? companyContinents.filter(c => CONTINENT_LABELS[c])
+        : [];
+      const continentLabel = validContinents.length
+        ? validContinents.map(c => CONTINENT_LABELS[c]).join(', ')
+        : '';
+
+      const parts = [];
+      if (companyGeoScope === 'domestic') parts.push('United States ONLY');
+      else if (companyGeoScope === 'foreign') parts.push('foreign countries (NOT the United States)');
+      // 'both' adds nothing — implies global
+
+      if (continentLabel) parts.push(`continents: ${continentLabel}`);
+      if (extraCountries) parts.push(`countries: ${extraCountries}`);
+
+      geoSelected = parts.length ? parts.join('; ') : 'Global (no restriction)';
     } else {
       const countryList = selectedCountries && selectedCountries.length ? selectedCountries : [];
       const hasUSA = countryList.includes('USA');
@@ -418,6 +513,21 @@ No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`j
         ? `\n[DATE RANGE — EVIDENCE PREFERENCE]\nStrongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.\n- Rank suppliers with evidence in this window highest.\n- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.\n- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.\n`
         : '';
 
+      // Build geography directive — make this a hard rule, not a hint
+      let geoDirective = '';
+      if (companyGeoScope === 'domestic') {
+        geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered or with primary manufacturing in the UNITED STATES. Foreign suppliers — even if they have US offices — are HARD-FAILS. Do not include them. The location field of every result must end with a US state (e.g. "Detroit, MI" or "Detroit, MI, USA").`;
+      } else if (companyGeoScope === 'foreign') {
+        geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered OUTSIDE the United States. US-based suppliers are HARD-FAILS. The location field must clearly indicate a non-US country.`;
+      }
+      if (validContinents.length) {
+        const continentNames = validContinents.map(c => CONTINENT_LABELS[c]).join(', ');
+        geoDirective += `\nGeographic scope is further restricted to these continents/regions: ${continentNames}. Suppliers outside these regions are hard-fails.`;
+      }
+      if (companyGeoCountries && companyGeoCountries.trim()) {
+        geoDirective += `\nFocus particularly on these countries: ${companyGeoCountries.trim()}.`;
+      }
+
       supplierPrompt = `[GOAL]
 Perform deep-web research using Google Search to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
 
@@ -426,6 +536,7 @@ Perform deep-web research using Google Search to identify verified VENDORS that 
 - Required Certs: ${certText}
 - HTS Code (commodity hint): ${htsText}
 - Geography Scope: ${geoSelected}
+${geoDirective}
 ${dateRangeSection}
 [DIRECTION OF MONEY — CRITICAL]
 Money must flow FROM ${targetCompany} TO the supplier. If ${targetCompany} is the one being paid (i.e., the other party is a customer), EXCLUDE it.
@@ -589,18 +700,59 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
           console.log(`Company-mode exclusion filter: ${beforeExcl} → ${suppliers.length}`);
 
           // Enforce company-mode geography scope
+          // Treat location as "unknown" only when the whole string is a known unknown marker —
+          // NOT when "na" or "unknown" appears as a substring (the old regex matched China,
+          // Argentina, Ghana, etc. as "unknown" because they contain "na").
+          const isUnknownLocation = (loc) => {
+            const t = (loc || '').trim().toLowerCase();
+            return !t || t === 'n/a' || t === 'na' || t === 'unknown' || t === 'not specified' || t === 'not provided' || t === '-' || t === 'tbd';
+          };
+
           if (companyGeoScope === 'domestic') {
             suppliers = suppliers.filter(s => {
               const loc = s.location || '';
-              if (!loc || /n\/?a|unknown/i.test(loc)) return true; // allow unknowns
-              return isUSLocation(loc) || /\b(usa|united states|u\.?s\.?)\b/i.test(loc);
+              if (isUnknownLocation(loc)) {
+                console.log(`  [domestic filter] excluding "${s.name}" — unknown location`);
+                return false; // unknowns excluded in domestic mode (safer default)
+              }
+              const passes = isUSLocation(loc);
+              if (!passes) console.log(`  [domestic filter] excluding "${s.name}" — non-US location: ${loc}`);
+              return passes;
             });
           } else if (companyGeoScope === 'foreign') {
             suppliers = suppliers.filter(s => {
               const loc = s.location || '';
-              if (!loc || /n\/?a|unknown/i.test(loc)) return true;
-              return !isUSLocation(loc);
+              if (isUnknownLocation(loc)) {
+                console.log(`  [foreign filter] excluding "${s.name}" — unknown location`);
+                return false; // unknowns excluded in foreign mode too
+              }
+              const passes = !isUSLocation(loc);
+              if (!passes) console.log(`  [foreign filter] excluding "${s.name}" — US location: ${loc}`);
+              return passes;
             });
+          }
+
+          // Apply continent filter on top, if any continents were selected
+          if (validContinents && validContinents.length > 0) {
+            const allowedContinents = new Set(validContinents);
+            suppliers = suppliers.filter(s => {
+              const loc = s.location || '';
+              if (isUnknownLocation(loc)) {
+                console.log(`  [continent filter] excluding "${s.name}" — unknown location`);
+                return false;
+              }
+              const continent = classifyContinent(loc);
+              if (!continent) {
+                console.log(`  [continent filter] excluding "${s.name}" — could not classify location: ${loc}`);
+                return false;
+              }
+              if (!allowedContinents.has(continent)) {
+                console.log(`  [continent filter] excluding "${s.name}" — ${CONTINENT_LABELS[continent]} not in allowed list: ${loc}`);
+                return false;
+              }
+              return true;
+            });
+            console.log(`Continent filter (${validContinents.join(',')}): ${suppliers.length} remaining`);
           }
         }
         if (supplierType && supplierType !== 'both') {
