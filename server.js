@@ -955,11 +955,24 @@ app.post('/api/email', async (req, res) => {
   }
 
   try {
-    const { commodity, includeAttach, attachList } = req.body;
+    const { commodity, includeAttach, attachList, dueDate } = req.body;
     const attachNote = includeAttach && attachList
       ? ` Reference that attachments are included: ${attachList}.` : '';
 
-    const emailPrompt = `Write a professional supplier outreach email template for sourcing: "${commodity}"${attachNote}
+    // Format the due date as e.g. "May 19, 2026" if provided. Validate the format
+    // server-side so bad input doesn't get injected into the prompt.
+    let dueDateNote = '';
+    if (dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
+      // Parse without timezone shifts (interpret YYYY-MM-DD literally)
+      const [y, m, d] = dueDate.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, m - 1, d));
+      const formatted = dt.toLocaleDateString('en-US', {
+        timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric'
+      });
+      dueDateNote = ` Include this exact line near the end of the second paragraph: "Please provide pricing by ${formatted}."`;
+    }
+
+    const emailPrompt = `Write a professional supplier outreach email template for sourcing: "${commodity}"${attachNote}${dueDateNote}
 
 Use these exact placeholders — do not substitute them with example text:
 - [SUPPLIER_NAME] — the supplier company name
@@ -971,7 +984,7 @@ Return a JSON object with:
 - subject (string — professional subject line, may include [Your Company])
 - body (string — 3 short paragraphs:
     1. Introduce [Your Name], [Your Title] from [Your Company] and the sourcing need, referencing [SUPPLIER_NAME] specialty
-    2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}
+    2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}${dueDateNote ? ', include the pricing-by date line provided above' : ''}
     3. Polite closing with a call to action
   Do NOT include a signature block.)
 
