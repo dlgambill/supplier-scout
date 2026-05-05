@@ -169,40 +169,54 @@ function filterByScope(suppliers, scope, countries, selectedCountries) {
 // ── Non-supplier exclusion patterns for company-search mode ─────────────────
 // These match entities that show up in search results around a target company
 // but are not vendors (customers, regulators, schools, news, etc).
+//
+// IMPORTANT: Patterns must be specific enough that they don't false-match real
+// industrial suppliers. Generic single words like "institute", "authority",
+// "agency", "news", "journal" are too broad on their own — anchor them to
+// type-indicator positions or distinctive phrases.
 const NON_SUPPLIER_PATTERNS = [
-  // Education & research
-  /\buniversity\b/i, /\bcollege\b/i, /\binstitute of technology\b/i,
-  /\bschool of (engineering|business|medicine|law)\b/i, /\bpolytechnic\b/i,
-  /\bnational laboratory\b/i, /\bresearch lab(oratory)?\b/i, /\bfraunhofer\b/i,
-  // Government — US
-  /\bdepartment of\b/i, /\bdept\.? of\b/i, /\bministry of\b/i,
-  /\bagency\b/i, /\bbureau\b/i, /\badministration\b/i, /\bcommission\b/i,
-  /\b(federal|us|u\.s\.) (gov|government|agency)\b/i,
-  /\b(faa|fcc|fda|epa|nasa|usda|gsa|nih|nsf|doe|dod|dol|dot|nrc|nasa|sec|irs)\b/i,
-  /\b(army|navy|air force|marines|marine corps|coast guard|space force|military)\b/i,
-  /\bdefense logistics\b/i, /\bpentagon\b/i,
+  // Education & research — match only when these words clearly indicate the entity type
+  /\buniversity (of|at)\b/i, /\bof [a-z\- ]{3,40} university\b/i,
+  /\b(community |state |technical )?college\b/i, /\binstitute of technology\b/i,
+  /\bschool of (engineering|business|medicine|law|public health)\b/i,
+  /\b(state|technical) polytechnic\b/i, /\bpolytechnic university\b/i,
+  /\bnational lab(oratory|oratories)?\b/i, /\b(research|teaching) hospital\b/i,
+  /\bfraunhofer\b/i, /\b(mit|caltech|stanford|berkeley|harvard) (university|laboratory|lab)\b/i,
+  // Government — US (specific named agencies and clear type prefixes)
+  /^(u\.?s\.? )?department of\b/i, /\bu\.?s\.? department of\b/i,
+  /\bministry of\b/i,
+  /^(federal|state|us|u\.s\.) (bureau|administration|agency|commission|department)\b/i,
+  /\b(faa|fcc|fda|epa|nasa|usda|gsa|nih|nsf|doe|dod|dol|dot|nrc|sec\.gov|irs)\b/i,
+  /\b(us|u\.s\.|united states) (army|navy|air force|marine corps|coast guard|space force)\b/i,
+  /\bdefense logistics agency\b/i, /\bpentagon\b/i,
   // Government — generic / foreign
-  /\bgovernment of\b/i, /\bcity of\b/i, /\bstate of\b/i, /\bcounty of\b/i,
-  /\bauthority\b/i, /\bcouncil\b/i,
-  // Standards / certification / non-profit
-  /\bfoundation\b/i, /\bassociation\b/i, /\bsociety of\b/i, /\binstitute\b/i,
-  /\b(iso|astm|ieee|sae|ansi|ieee|underwriters laboratories|ul llc)\b/i,
-  /\bnon-?profit\b/i, /\bcharit(y|able)\b/i,
-  // Media / analyst / publishing
-  /\b(reuters|bloomberg|cnbc|wsj|wall street journal|new york times|forbes|fortune|bbc|cnn|axios)\b/i,
-  /\b(gartner|forrester|idc|moody'?s|s&p global|fitch|morningstar)\b/i,
-  /\bnews\b/i, /\bmagazine\b/i, /\bjournal\b/i, /\bgazette\b/i,
+  /^government of\b/i, /^city of\b/i, /^state of\b/i, /^county of\b/i,
+  /\b(port|housing|transit|water) authority\b/i, /\bcity council\b/i,
+  // Standards / certification / non-profit (prefer named bodies + clear type indicators)
+  /\b(iso|astm international|ieee|sae international|ansi|underwriters laboratories|ul llc)\b/i,
+  /\bnon-?profit\b/i, /\bcharitable foundation\b/i,
+  /\b[a-z ]+ trade association\b/i, /\b[a-z ]+ industry association\b/i,
+  // Media / analyst / publishing (specific outlets only)
+  /\b(reuters|bloomberg news|bloomberg l\.?p\.?|cnbc|wsj|wall street journal|new york times|nyt|forbes|fortune magazine|bbc|cnn|axios|the guardian|financial times|barron'?s)\b/i,
+  /\b(gartner|forrester research|idc research|moody'?s|s&p global|fitch ratings|morningstar)\b/i,
   // Aggregators / directories themselves
-  /\b(importyeti|panjiva|datamyne|thomasnet|kompass|globalsources|alibaba|sec\.gov|bloomberg|crunchbase|dun ?& ?bradstreet|d&b)\b/i,
-  // Generic placeholders
-  /\b(various suppliers|multiple vendors|undisclosed|confidential|n\/?a)\b/i
+  /\b(importyeti|panjiva|datamyne|thomasnet|kompass|global ?sources|sec\.gov|crunchbase|dun ?& ?bradstreet)\b/i,
+  // Generic placeholders / non-entities
+  /^(various|multiple) (suppliers|vendors)$/i, /^(undisclosed|confidential)$/i, /^n\/?a$/i,
+  /^supplier #?\d+$/i, /^vendor #?\d+$/i
 ];
 
 function isNonSupplierEntity(name) {
   if (!name) return true;
   const n = name.trim();
   if (!n) return true;
-  return NON_SUPPLIER_PATTERNS.some(rx => rx.test(n));
+  for (const rx of NON_SUPPLIER_PATTERNS) {
+    if (rx.test(n)) {
+      console.log(`  [exclude] "${n}" matched pattern ${rx}`);
+      return true;
+    }
+  }
+  return false;
 }
 
 function isSelfOrSubsidiary(name, targetCompany) {
@@ -397,13 +411,9 @@ You must NEVER return:
 No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`json). Output the raw JSON array immediately.`;
 
       // Build optional date-range section (company mode only, when both dates valid)
-      const dateRangeSection = hasDateRange ? `
-[DATE RANGE — EVIDENCE PREFERENCE]
-Strongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.
-- Rank suppliers with evidence in this window highest.
-- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.
-- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.
-` : '';
+      const dateRangeSection = hasDateRange
+        ? `\n[DATE RANGE — EVIDENCE PREFERENCE]\nStrongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.\n- Rank suppliers with evidence in this window highest.\n- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.\n- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.\n`
+        : '';
 
       supplierPrompt = `[GOAL]
 Perform deep-web research using Google Search to identify verified VENDORS that "${targetCompany}" PAYS — i.e., companies that appear on ${targetCompany}'s purchase orders or accounts payable.
