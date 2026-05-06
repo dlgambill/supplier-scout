@@ -962,14 +962,15 @@ app.post('/api/email', async (req, res) => {
     // Format the due date as e.g. "May 19, 2026" if provided. Validate the format
     // server-side so bad input doesn't get injected into the prompt.
     let dueDateNote = '';
+    let formattedDueDate = '';
     if (dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
       // Parse without timezone shifts (interpret YYYY-MM-DD literally)
       const [y, m, d] = dueDate.split('-').map(Number);
       const dt = new Date(Date.UTC(y, m - 1, d));
-      const formatted = dt.toLocaleDateString('en-US', {
+      formattedDueDate = dt.toLocaleDateString('en-US', {
         timeZone: 'UTC', year: 'numeric', month: 'long', day: 'numeric'
       });
-      dueDateNote = ` Include this exact line near the end of the second paragraph: "Please provide pricing by ${formatted}."`;
+      dueDateNote = ` Include a short pricing-by line near the end of the email (its own line or short closing paragraph, not buried inside another paragraph) using this exact date: "${formattedDueDate}".`;
     }
 
     // Optional sourcing context (product links, part numbers, target volumes, etc.)
@@ -980,7 +981,10 @@ app.post('/api/email', async (req, res) => {
       const cleaned = emailContext.trim().slice(0, 2000);
       contextBlock = `
 
-The sender provided the following sourcing context to weave into the email body. Reference the relevant pieces (especially product links, part numbers, and target volumes) naturally — do NOT dump it verbatim or as a bulleted list unless that's the natural shape of the information. Preserve any URLs exactly as written:
+The sender provided the following sourcing context. Use it like this:
+1. PUBLIC-FACING DETAILS (specific product category/sub-types, target volumes, part numbers): fold into the body where they sharpen the supplier's understanding of the opportunity. The specific product category (e.g. "industrial-strength and HVAC duct tapes" rather than just "duct tape") should be stated ONCE, in paragraph 1's "we're sourcing X" clause — do NOT restate the same product category in later paragraphs.
+2. URLS: place each URL on its own line under a short label like "Current products for reference:" or "Reference:" — never inline in prose, never bare without a label, and never in a bulleted list with a single item. Preserve URLs exactly as written.
+3. INTERNAL PROCEDURAL LANGUAGE (instructions on filling out forms, color-coded cells, internal SKU conventions, internal team workflows): paraphrase or omit. This belongs in the attached document, not the outreach email body.
 ---
 ${cleaned}
 ---`;
@@ -996,10 +1000,12 @@ Use these exact placeholders — do not substitute them with example text:
 
 Return a JSON object with:
 - subject (string — professional subject line, may include [Your Company])
-- body (string — 3 short paragraphs:
-    1. Introduce [Your Name], [Your Title] from [Your Company] and the sourcing need, referencing [SUPPLIER_NAME] specialty
-    2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}${dueDateNote ? ', include the pricing-by date line provided above' : ''}${contextBlock ? ', and naturally reference the sourcing context above (product links, part numbers, volumes) where it fits' : ''}
-    3. Polite closing with a call to action
+- body (string — short, scannable. Separate paragraphs with \\n\\n. Standalone labeled lines (e.g. a URL under "Current products for reference:") use a single \\n between the label and the URL, and \\n\\n to separate from surrounding paragraphs. Structure:
+    Para 1: Introduce [Your Name], [Your Title] from [Your Company] and the sourcing need (use the specific product category from context if provided), referencing [SUPPLIER_NAME] specialty. Keep to 2 sentences.
+    Para 2: Single-purpose pointer to the RFQ / quote request${includeAttach && attachList ? ', mentioning the attached documents' : ''}. Do NOT restate the product category from para 1. Keep to 1–2 sentences.${contextBlock ? `
+    Labeled URL line(s): If the sourcing context contains URLs, place them here under a short label, each URL on its own line.` : ''}${dueDateNote ? `
+    Pricing-by line: A short standalone line "Please return the completed RFQ with pricing by ${formattedDueDate}." (or similar phrasing).` : ''}
+    Final para: Polite closing / call to action. Keep to 1–2 sentences.
   Do NOT include a signature block.)
 
 Return ONLY a valid JSON object. No markdown. No preamble.`;
