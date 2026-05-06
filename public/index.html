@@ -167,7 +167,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.4.1</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.0</div>
   </header>
 
   <div id="inputPanel">
@@ -215,34 +215,43 @@ input[type="date"]:focus { border-color:var(--accent); }
         <div class="source-check" onclick="selectAllCountries()" id="allCountriesBtn">&#127760; All Countries</div>
         <div class="source-check" onclick="clearAllCountries()">Clear All</div>
       </div>
+      <div id="commodityContinentPills" class="pill-group" style="margin-top:6px;margin-bottom:6px;">
+        <div class="pill" data-val="north_america">&#127758; North America</div>
+        <div class="pill" data-val="south_america">&#127757; South America</div>
+        <div class="pill" data-val="europe">&#127757; Europe</div>
+        <div class="pill" data-val="asia">&#127759; Asia</div>
+        <div class="pill" data-val="middle_east">&#127759; Middle East</div>
+        <div class="pill" data-val="africa">&#127757; Africa</div>
+        <div class="pill" data-val="oceania">&#127759; Oceania</div>
+      </div>
       <div id="countryCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;">
-        <div class="country-check usa" data-val="USA">🇺🇸 USA</div>
-        <div class="country-check" data-val="China">🇨🇳 China</div>
-        <div class="country-check" data-val="Mexico">🇲🇽 Mexico</div>
-        <div class="country-check" data-val="Canada">🇨🇦 Canada</div>
-        <div class="country-check" data-val="Germany">🇩🇪 Germany</div>
-        <div class="country-check" data-val="Japan">🇯🇵 Japan</div>
-        <div class="country-check" data-val="South Korea">🇰🇷 South Korea</div>
-        <div class="country-check" data-val="United Kingdom">🇬🇧 UK</div>
-        <div class="country-check" data-val="Taiwan">🇹🇼 Taiwan</div>
-        <div class="country-check" data-val="India">🇮🇳 India</div>
-        <div class="country-check" data-val="Vietnam">🇻🇳 Vietnam</div>
-        <div class="country-check" data-val="Italy">🇮🇹 Italy</div>
-        <div class="country-check" data-val="France">🇫🇷 France</div>
-        <div class="country-check" data-val="Ireland">🇮🇪 Ireland</div>
-        <div class="country-check" data-val="Switzerland">🇨🇭 Switzerland</div>
-        <div class="country-check" data-val="Netherlands">🇳🇱 Netherlands</div>
-        <div class="country-check" data-val="Malaysia">🇲🇾 Malaysia</div>
-        <div class="country-check" data-val="Thailand">🇹🇭 Thailand</div>
-        <div class="country-check" data-val="Brazil">🇧🇷 Brazil</div>
-        <div class="country-check" data-val="Belgium">🇧🇪 Belgium</div>
-        <div class="country-check" data-val="Singapore">🇸🇬 Singapore</div>
-        <div class="country-check" data-val="Australia">🇦🇺 Australia</div>
-        <div class="country-check" data-val="Indonesia">🇮🇩 Indonesia</div>
-        <div class="country-check" data-val="Israel">🇮🇱 Israel</div>
-        <div class="country-check" data-val="Spain">🇪🇸 Spain</div>
-        <div class="country-check" data-val="Austria">🇦🇹 Austria</div>
-        <div class="country-check" data-val="Cambodia">🇰🇭 Cambodia</div>
+        <div class="country-check usa" data-val="USA" data-continent="north_america">🇺🇸 USA</div>
+        <div class="country-check" data-val="China" data-continent="asia">🇨🇳 China</div>
+        <div class="country-check" data-val="Mexico" data-continent="north_america">🇲🇽 Mexico</div>
+        <div class="country-check" data-val="Canada" data-continent="north_america">🇨🇦 Canada</div>
+        <div class="country-check" data-val="Germany" data-continent="europe">🇩🇪 Germany</div>
+        <div class="country-check" data-val="Japan" data-continent="asia">🇯🇵 Japan</div>
+        <div class="country-check" data-val="South Korea" data-continent="asia">🇰🇷 South Korea</div>
+        <div class="country-check" data-val="United Kingdom" data-continent="europe">🇬🇧 UK</div>
+        <div class="country-check" data-val="Taiwan" data-continent="asia">🇹🇼 Taiwan</div>
+        <div class="country-check" data-val="India" data-continent="asia">🇮🇳 India</div>
+        <div class="country-check" data-val="Vietnam" data-continent="asia">🇻🇳 Vietnam</div>
+        <div class="country-check" data-val="Italy" data-continent="europe">🇮🇹 Italy</div>
+        <div class="country-check" data-val="France" data-continent="europe">🇫🇷 France</div>
+        <div class="country-check" data-val="Ireland" data-continent="europe">🇮🇪 Ireland</div>
+        <div class="country-check" data-val="Switzerland" data-continent="europe">🇨🇭 Switzerland</div>
+        <div class="country-check" data-val="Netherlands" data-continent="europe">🇳🇱 Netherlands</div>
+        <div class="country-check" data-val="Malaysia" data-continent="asia">🇲🇾 Malaysia</div>
+        <div class="country-check" data-val="Thailand" data-continent="asia">🇹🇭 Thailand</div>
+        <div class="country-check" data-val="Brazil" data-continent="south_america">🇧🇷 Brazil</div>
+        <div class="country-check" data-val="Belgium" data-continent="europe">🇧🇪 Belgium</div>
+        <div class="country-check" data-val="Singapore" data-continent="asia">🇸🇬 Singapore</div>
+        <div class="country-check" data-val="Australia" data-continent="oceania">🇦🇺 Australia</div>
+        <div class="country-check" data-val="Indonesia" data-continent="asia">🇮🇩 Indonesia</div>
+        <div class="country-check" data-val="Israel" data-continent="middle_east">🇮🇱 Israel</div>
+        <div class="country-check" data-val="Spain" data-continent="europe">🇪🇸 Spain</div>
+        <div class="country-check" data-val="Austria" data-continent="europe">🇦🇹 Austria</div>
+        <div class="country-check" data-val="Cambodia" data-continent="asia">🇰🇭 Cambodia</div>
         <div class="country-check" id="otherCountryCheck" data-val="other">+ Other</div>
       </div>
       <div id="otherCountryInput" style="display:none;margin-top:8px;">
@@ -356,6 +365,10 @@ input[type="date"]:focus { border-color:var(--accent); }
           <label>Your company</label>
           <input type="text" id="senderCompany" placeholder="Acme Corp" />
         </div>
+      </div>
+      <div class="input-block" style="margin-top:14px;">
+        <label>Additional context to include in the email <span style="color:var(--text3)">(optional &mdash; product links, part numbers, target volumes, anything you want referenced)</span></label>
+        <textarea id="emailContextInput" rows="4" placeholder="e.g. Resourcing the following SKUs:&#10;- https://acmecorp.com/products/widget-a (currently 2,500 units/month)&#10;- https://acmecorp.com/products/widget-b (currently 800 units/month)&#10;Need samples for engineering review." style="width:100%;padding:10px 12px;background:var(--surface);border:1px solid var(--border2);color:var(--text1);font-family:'IBM Plex Mono',monospace;font-size:12px;line-height:1.5;border-radius:2px;resize:vertical;box-sizing:border-box;"></textarea>
       </div>
       <div class="input-block">
         <div id="attachToggle" class="toggle-row" onclick="toggleOpt('attach')">
@@ -540,16 +553,59 @@ document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.ad
   }
 }));
 
+// Frontend mirror of the server-side CONTINENT_COUNTRIES map. When a continent
+// pill is selected, every country on that continent is added to the search
+// payload — not just the ones we have pills for. Names are proper-cased so they
+// flow cleanly into prompts and the server's location-substring filter.
+const COMMODITY_CONTINENT_COUNTRIES = {
+  north_america: ['USA','Canada','Mexico','Guatemala','Honduras','El Salvador','Nicaragua','Costa Rica','Panama','Belize','Cuba','Haiti','Dominican Republic','Jamaica','Trinidad and Tobago','Bahamas','Barbados','Puerto Rico'],
+  south_america: ['Brazil','Argentina','Chile','Peru','Colombia','Venezuela','Ecuador','Bolivia','Paraguay','Uruguay','Guyana','Suriname','French Guiana'],
+  europe: ['United Kingdom','Ireland','Germany','France','Italy','Spain','Portugal','Netherlands','Belgium','Luxembourg','Switzerland','Austria','Poland','Czech Republic','Slovakia','Hungary','Romania','Bulgaria','Greece','Sweden','Norway','Denmark','Finland','Iceland','Estonia','Latvia','Lithuania','Ukraine','Belarus','Moldova','Serbia','Croatia','Slovenia','Bosnia and Herzegovina','Montenegro','North Macedonia','Albania','Kosovo','Cyprus','Malta','Russia'],
+  asia: ['China','Japan','South Korea','North Korea','Taiwan','Hong Kong','Macau','Mongolia','India','Pakistan','Bangladesh','Sri Lanka','Nepal','Bhutan','Maldives','Thailand','Vietnam','Cambodia','Laos','Myanmar','Malaysia','Singapore','Indonesia','Philippines','Brunei','Timor-Leste','Kazakhstan','Uzbekistan','Turkmenistan','Kyrgyzstan','Tajikistan','Afghanistan'],
+  middle_east: ['United Arab Emirates','Saudi Arabia','Israel','Turkey','Iran','Iraq','Syria','Lebanon','Jordan','Kuwait','Qatar','Bahrain','Oman','Yemen','Palestine'],
+  africa: ['South Africa','Egypt','Morocco','Tunisia','Algeria','Libya','Sudan','Ethiopia','Kenya','Tanzania','Uganda','Ghana','Nigeria','Senegal','Côte d\'Ivoire','Cameroon','Angola','Mozambique','Zimbabwe','Zambia','Botswana','Namibia','Rwanda','Burundi','Madagascar','Mauritius','Somalia','Eritrea','Djibouti','Mali','Burkina Faso','Niger','Chad','Congo','Democratic Republic of the Congo','Gabon','Benin','Togo','Guinea','Sierra Leone','Liberia','Gambia','Mauritania'],
+  oceania: ['Australia','New Zealand','Papua New Guinea','Fiji','Samoa','Tonga','Vanuatu','Solomon Islands']
+};
+
+let currentCommodityContinents = new Set();
+
+// Continent pills (commodity mode) — toggle independently from country pills.
+// A selected continent expands into its full country roster at search time.
+document.querySelectorAll('#commodityContinentPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  const continent=p.dataset.val;
+  if(currentCommodityContinents.has(continent)){
+    currentCommodityContinents.delete(continent);
+    p.classList.remove('selected');
+  } else {
+    currentCommodityContinents.add(continent);
+    p.classList.add('selected');
+  }
+}));
+
 function getSelectedCountries(){
+  const seen=new Set(); // lowercase keys for dedupe
   const selected=[];
+  const add=(name)=>{
+    if(!name) return;
+    const key=name.toLowerCase().trim();
+    if(!key||seen.has(key)) return;
+    seen.add(key);
+    selected.push(name);
+  };
+  // 1. Individually selected country pills
   document.querySelectorAll('#countryCheckboxes .country-check.selected').forEach(el=>{
     if(el.id==='otherCountryCheck') return;
-    selected.push(el.dataset.val);
+    add(el.dataset.val);
   });
+  // 2. Full roster for each selected continent (independent of pills)
+  currentCommodityContinents.forEach(cont=>{
+    (COMMODITY_CONTINENT_COUNTRIES[cont]||[]).forEach(add);
+  });
+  // 3. Free-text "other" countries
   const otherCheck=document.getElementById('otherCountryCheck');
   if(otherCheck&&otherCheck.classList.contains('selected')){
     const otherVal=document.getElementById('countryInput').value.trim();
-    if(otherVal) otherVal.split(',').map(c=>c.trim()).filter(Boolean).forEach(c=>selected.push(c));
+    if(otherVal) otherVal.split(',').map(c=>c.trim()).filter(Boolean).forEach(add);
   }
   return selected;
 }
@@ -575,6 +631,9 @@ function clearAllCountries(){
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
   document.getElementById('otherCountryInput').style.display='none';
   document.getElementById('allCountriesBtn').classList.remove('selected');
+  // Also clear continent selections, since "Clear All" should mean clear all.
+  currentCommodityContinents.clear();
+  document.querySelectorAll('#commodityContinentPills .pill').forEach(p=>p.classList.remove('selected'));
 }
 
 document.getElementById('commodityInput').addEventListener('paste',e=>{
@@ -703,8 +762,8 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
   return parseClaudeJSON(data.claudeData);
 }
 
-async function callEmail(commodity, includeAttach, attachList, dueDate){
-  const body={commodity, includeAttach, attachList, dueDate: dueDate||''};
+async function callEmail(commodity, includeAttach, attachList, dueDate, emailContext){
+  const body={commodity, includeAttach, attachList, dueDate: dueDate||'', emailContext: emailContext||''};
   const res=await fetch('/api/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await res.json();
   if(data.error) throw new Error(data.error);
@@ -763,6 +822,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
 
   const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
   const dueDate=includeDueDate?document.getElementById('dueDateInput').value.trim():'';
+  const emailContext=wantEmails?(document.getElementById('emailContextInput').value.trim()):'';
   const stepKey = (currentMode === 'company') ? 'company' : searchScope;
   const baseSteps=[...STEPS[stepKey]];
   if(wantEmails&&isFirst) baseSteps.push('Drafting email campaign');
@@ -800,7 +860,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     }
 
     if(wantEmails&&isFirst){
-      const emailTemplate=await callEmail(commodity, includeAttach, attachList, dueDate);
+      const emailTemplate=await callEmail(commodity, includeAttach, attachList, dueDate, emailContext);
       emails=[emailTemplate];
     }
 
@@ -1104,7 +1164,7 @@ function showError(msg){ const p=document.getElementById('errorPanel'); p.textCo
 function reset(){
   document.getElementById('resultsPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='block';
-  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput','dateFromInput','dateToInput','dueDateInput','attachInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
+  ['commodityInput','senderEmail','senderName','senderTitle','senderCompany','certInput','countryInput','htsInput','companyNameInput','companyCountriesInput','dateFromInput','dateToInput','dueDateInput','attachInput','emailContextInput'].forEach(id=>{const el=document.getElementById(id); if(el) el.value='';});
   document.getElementById('otherCountryInput').style.display='none';
   removePastedImage();
   fitFilter='all'; supplierType='both'; currentSupplierType='both';
@@ -1147,6 +1207,8 @@ function reset(){
   const launchSpan=document.querySelector('.btn-launch span'); if(launchSpan) launchSpan.textContent='FIND SUPPLIERS';
   currentCommodity=''; currentCerts=''; currentCountries=[];
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
+  currentCommodityContinents.clear();
+  document.querySelectorAll('#commodityContinentPills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelectorAll('#sourceCheckboxes .source-check').forEach(el=>el.classList.remove('selected'));
   document.querySelectorAll('#sourceCheckboxes .source-check[data-val="ThomasNet"], #sourceCheckboxes .source-check[data-val="ImportYeti"], #sourceCheckboxes .source-check[data-val="Kompass"]').forEach(el=>el.classList.add('selected'));
   currentSources=[];
