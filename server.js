@@ -955,7 +955,7 @@ app.post('/api/email', async (req, res) => {
   }
 
   try {
-    const { commodity, includeAttach, attachList, dueDate } = req.body;
+    const { commodity, includeAttach, attachList, dueDate, emailContext } = req.body;
     const attachNote = includeAttach && attachList
       ? ` Reference that attachments are included: ${attachList}.` : '';
 
@@ -972,7 +972,21 @@ app.post('/api/email', async (req, res) => {
       dueDateNote = ` Include this exact line near the end of the second paragraph: "Please provide pricing by ${formatted}."`;
     }
 
-    const emailPrompt = `Write a professional supplier outreach email template for sourcing: "${commodity}"${attachNote}${dueDateNote}
+    // Optional sourcing context (product links, part numbers, target volumes, etc.)
+    // Sanitize: cap length and strip any prompt-injection-style markers, but
+    // preserve URLs and line breaks so the model can reference them faithfully.
+    let contextBlock = '';
+    if (typeof emailContext === 'string' && emailContext.trim()) {
+      const cleaned = emailContext.trim().slice(0, 2000);
+      contextBlock = `
+
+The sender provided the following sourcing context to weave into the email body. Reference the relevant pieces (especially product links, part numbers, and target volumes) naturally — do NOT dump it verbatim or as a bulleted list unless that's the natural shape of the information. Preserve any URLs exactly as written:
+---
+${cleaned}
+---`;
+    }
+
+    const emailPrompt = `Write a professional supplier outreach email template for sourcing: "${commodity}"${attachNote}${dueDateNote}${contextBlock}
 
 Use these exact placeholders — do not substitute them with example text:
 - [SUPPLIER_NAME] — the supplier company name
@@ -984,7 +998,7 @@ Return a JSON object with:
 - subject (string — professional subject line, may include [Your Company])
 - body (string — 3 short paragraphs:
     1. Introduce [Your Name], [Your Title] from [Your Company] and the sourcing need, referencing [SUPPLIER_NAME] specialty
-    2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}${dueDateNote ? ', include the pricing-by date line provided above' : ''}
+    2. Request a quote or capabilities discussion${includeAttach && attachList ? ', mention the attached documents' : ''}${dueDateNote ? ', include the pricing-by date line provided above' : ''}${contextBlock ? ', and naturally reference the sourcing context above (product links, part numbers, volumes) where it fits' : ''}
     3. Polite closing with a call to action
   Do NOT include a signature block.)
 
