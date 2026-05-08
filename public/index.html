@@ -148,11 +148,19 @@ input[type="date"]:focus { border-color:var(--accent); }
 .email-text { font-size:13px; line-height:1.8; color:var(--text2); white-space:pre-wrap; }
 .email-actions { display:flex; gap:8px; margin-top:12px; }
 
-.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; display:none; align-items:center; justify-content:center; }
+.modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,0.7); z-index:100; display:none; align-items:center; justify-content:center; padding:20px; }
 .modal-overlay.active { display:flex; }
-.modal { background:var(--surface); border:1px solid var(--accent); padding:28px; max-width:520px; width:90%; }
+.modal { background:var(--surface); border:1px solid var(--accent); padding:28px; max-width:640px; width:100%; max-height:90vh; overflow-y:auto; }
 .modal-title { font-family:'Syne',sans-serif; font-weight:700; font-size:16px; margin-bottom:18px; color:var(--accent); }
-.modal-actions { display:flex; gap:10px; margin-top:18px; }
+.modal-section-label { font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:1.5px; text-transform:uppercase; color:var(--text3); margin:18px 0 8px; padding-top:14px; border-top:1px dashed var(--border); }
+.modal-section-label:first-of-type { border-top:none; padding-top:0; margin-top:0; }
+.modal-actions { display:flex; gap:10px; margin-top:22px; padding-top:18px; border-top:1px solid var(--border); position:sticky; bottom:-28px; background:var(--surface); margin-left:-28px; margin-right:-28px; padding-left:28px; padding-right:28px; padding-bottom:0; }
+
+/* Custom scrollbar inside modal so it feels intentional, not native-Mac-ugly */
+.modal::-webkit-scrollbar { width:8px; }
+.modal::-webkit-scrollbar-track { background:var(--surface2); }
+.modal::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
+.modal::-webkit-scrollbar-thumb:hover { background:var(--accent); }
 
 .toast { position:fixed; bottom:24px; right:24px; background:var(--surface2); border:1px solid var(--accent); color:var(--accent); font-family:'IBM Plex Mono',monospace; font-size:12px; padding:9px 18px; opacity:0; transform:translateY(8px); transition:all 0.3s; pointer-events:none; z-index:999; }
 .toast.show { opacity:1; transform:translateY(0); }
@@ -167,7 +175,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.1</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.2</div>
   </header>
 
   <div id="inputPanel">
@@ -463,14 +471,112 @@ input[type="date"]:focus { border-color:var(--accent); }
   </div>
 </div>
 
-<!-- Refine Search Modal -->
+<!-- ─── Refine Search Modal ─────────────────────────────────────────────── -->
+<!--
+  Modal mirrors the main form's geography/filter controls so users can change
+  scope, countries, supplier type, etc. without starting over. Pre-populated
+  from current state on open; writes back to globals on submit. Pills/checks
+  inside the modal use the same classes as the main form so existing CSS
+  carries over — but we wire up our own listeners with a `data-refine` flag
+  so we don't accidentally hit the main form's handlers.
+-->
 <div class="modal-overlay" id="refineModal">
   <div class="modal">
     <div class="modal-title">&#9998; Refine Search</div>
-    <div class="input-block">
-      <label>Update your sourcing description</label>
+
+    <!-- Sourcing description / target company -->
+    <div class="modal-section-label" id="refineDescriptionLabel">Sourcing description</div>
+    <div class="input-block" id="refineCommodityBlock">
       <textarea id="refineCommodity" rows="3" placeholder="Refine or update your sourcing description..."></textarea>
     </div>
+
+    <!-- ── Geography (Commodity mode) ─────────────────────────────────── -->
+    <div id="refineCommodityGeo">
+      <div class="modal-section-label">&#127760; Source Countries</div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <div class="source-check" onclick="refineSelectAllCountries()">All Countries</div>
+        <div class="source-check" onclick="refineClearAllCountries()">Clear All</div>
+      </div>
+      <div class="pill-group" id="refineContinentPills" style="margin-bottom:8px;">
+        <div class="pill" data-val="north_america">North America</div>
+        <div class="pill" data-val="south_america">South America</div>
+        <div class="pill" data-val="europe">Europe</div>
+        <div class="pill" data-val="asia">Asia</div>
+        <div class="pill" data-val="middle_east">Middle East</div>
+        <div class="pill" data-val="africa">Africa</div>
+        <div class="pill" data-val="oceania">Oceania</div>
+      </div>
+      <div id="refineCountryCheckboxes" style="display:flex;flex-wrap:wrap;gap:6px;">
+        <div class="country-check usa" data-val="USA" data-continent="north_america">🇺🇸 USA</div>
+        <div class="country-check" data-val="China" data-continent="asia">🇨🇳 China</div>
+        <div class="country-check" data-val="Mexico" data-continent="north_america">🇲🇽 Mexico</div>
+        <div class="country-check" data-val="Canada" data-continent="north_america">🇨🇦 Canada</div>
+        <div class="country-check" data-val="Germany" data-continent="europe">🇩🇪 Germany</div>
+        <div class="country-check" data-val="Japan" data-continent="asia">🇯🇵 Japan</div>
+        <div class="country-check" data-val="South Korea" data-continent="asia">🇰🇷 South Korea</div>
+        <div class="country-check" data-val="United Kingdom" data-continent="europe">🇬🇧 UK</div>
+        <div class="country-check" data-val="Taiwan" data-continent="asia">🇹🇼 Taiwan</div>
+        <div class="country-check" data-val="India" data-continent="asia">🇮🇳 India</div>
+        <div class="country-check" data-val="Vietnam" data-continent="asia">🇻🇳 Vietnam</div>
+        <div class="country-check" data-val="Italy" data-continent="europe">🇮🇹 Italy</div>
+        <div class="country-check" data-val="France" data-continent="europe">🇫🇷 France</div>
+        <div class="country-check" data-val="Ireland" data-continent="europe">🇮🇪 Ireland</div>
+        <div class="country-check" data-val="Switzerland" data-continent="europe">🇨🇭 Switzerland</div>
+        <div class="country-check" data-val="Netherlands" data-continent="europe">🇳🇱 Netherlands</div>
+        <div class="country-check" data-val="Malaysia" data-continent="asia">🇲🇾 Malaysia</div>
+        <div class="country-check" data-val="Thailand" data-continent="asia">🇹🇭 Thailand</div>
+        <div class="country-check" data-val="Brazil" data-continent="south_america">🇧🇷 Brazil</div>
+        <div class="country-check" data-val="Belgium" data-continent="europe">🇧🇪 Belgium</div>
+        <div class="country-check" data-val="Singapore" data-continent="asia">🇸🇬 Singapore</div>
+        <div class="country-check" data-val="Australia" data-continent="oceania">🇦🇺 Australia</div>
+        <div class="country-check" data-val="Indonesia" data-continent="asia">🇮🇩 Indonesia</div>
+        <div class="country-check" data-val="Israel" data-continent="middle_east">🇮🇱 Israel</div>
+        <div class="country-check" data-val="Spain" data-continent="europe">🇪🇸 Spain</div>
+        <div class="country-check" data-val="Austria" data-continent="europe">🇦🇹 Austria</div>
+        <div class="country-check" data-val="Cambodia" data-continent="asia">🇰🇭 Cambodia</div>
+        <div class="country-check" id="refineOtherCountryCheck" data-val="other">+ Other</div>
+      </div>
+      <div id="refineOtherCountryInput" style="display:none;margin-top:8px;">
+        <input type="text" id="refineCountryInput" placeholder="e.g. Bangladesh, Ethiopia, Poland..." />
+      </div>
+    </div>
+
+    <!-- ── Geography (Company mode) ───────────────────────────────────── -->
+    <div id="refineCompanyGeo" style="display:none;">
+      <div class="modal-section-label">&#127760; Geography</div>
+      <div class="pill-group" id="refineCompanyGeoPills">
+        <div class="pill" data-val="domestic">Domestic Only</div>
+        <div class="pill" data-val="foreign">Foreign Only</div>
+        <div class="pill selected" data-val="both">Both</div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace;letter-spacing:0.05em;">Continents <span style="color:var(--text3)">(optional, multi-select)</span></label>
+        <div class="pill-group" id="refineCompanyContinentPills" style="margin-top:6px;">
+          <div class="pill" data-val="north_america">North America</div>
+          <div class="pill" data-val="south_america">South America</div>
+          <div class="pill" data-val="europe">Europe</div>
+          <div class="pill" data-val="asia">Asia</div>
+          <div class="pill" data-val="middle_east">Middle East</div>
+          <div class="pill" data-val="africa">Africa</div>
+          <div class="pill" data-val="oceania">Oceania</div>
+        </div>
+      </div>
+      <div style="margin-top:14px;">
+        <label style="font-size:11px;color:var(--text3);font-family:'IBM Plex Mono',monospace;letter-spacing:0.05em;">Specific countries to focus on <span style="color:var(--text3)">(optional, comma separated)</span></label>
+        <input type="text" id="refineCompanyCountriesInput" placeholder="e.g. China, Mexico, Vietnam" style="margin-top:6px;" />
+      </div>
+    </div>
+
+    <!-- ── Supplier type ──────────────────────────────────────────────── -->
+    <div class="modal-section-label">Supplier Type</div>
+    <div class="pill-group" id="refineSupplierTypePills">
+      <div class="pill" data-val="manufacturers">Manufacturers Only</div>
+      <div class="pill" data-val="distributors">Distributors Only</div>
+      <div class="pill selected" data-val="both">Both</div>
+    </div>
+
+    <!-- ── Certifications & HTS ───────────────────────────────────────── -->
+    <div class="modal-section-label">Filters</div>
     <div class="input-block">
       <label>Certifications <span style="color:var(--text3)">(comma separated)</span></label>
       <input type="text" id="refineCerts" placeholder="ISO 9001, AS9100..." />
@@ -479,6 +585,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <label>HTS Code <span style="color:var(--text3)">(optional)</span></label>
       <input type="text" id="refineHts" placeholder="e.g. 8481.80.30.70 (full 10-digit)" />
     </div>
+
     <div class="modal-actions">
       <button class="btn-launch" onclick="runRefinedSearch()" style="clip-path:none;">RE-RUN SEARCH &#8594;</button>
       <button class="btn-sm" onclick="closeRefineModal()">Cancel</button>
@@ -892,24 +999,215 @@ async function searchMoreSources(){
   await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false);
 }
 
+// ─── Refine Modal ─────────────────────────────────────────────────────────
+//
+// Wire up modal-internal pills/checks once on load. We use querySelectorAll
+// scoped to refine-specific IDs so these listeners never fire for the main
+// form, and vice versa.
+
+// Refine: commodity-mode continents (independent multi-select, expand to full roster)
+let refineCommodityContinents = new Set();
+document.querySelectorAll('#refineContinentPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  const continent=p.dataset.val;
+  if(refineCommodityContinents.has(continent)){
+    refineCommodityContinents.delete(continent);
+    p.classList.remove('selected');
+  } else {
+    refineCommodityContinents.add(continent);
+    p.classList.add('selected');
+  }
+}));
+
+// Refine: commodity-mode country checks
+document.querySelectorAll('#refineCountryCheckboxes .country-check').forEach(el=>el.addEventListener('click',()=>{
+  if(el.id==='refineOtherCountryCheck'){
+    el.classList.toggle('selected');
+    document.getElementById('refineOtherCountryInput').style.display=el.classList.contains('selected')?'block':'none';
+  } else {
+    el.classList.toggle('selected');
+  }
+}));
+
+// Refine: company-mode geo scope (single-select)
+document.querySelectorAll('#refineCompanyGeoPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#refineCompanyGeoPills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected');
+}));
+
+// Refine: company-mode continents (multi-select, used as continent filter on server)
+document.querySelectorAll('#refineCompanyContinentPills .pill').forEach(p=>p.addEventListener('click',()=>{
+  p.classList.toggle('selected');
+}));
+
+// Refine: supplier type pills (single-select)
+document.querySelectorAll('#refineSupplierTypePills .pill').forEach(p=>p.addEventListener('click',()=>{
+  document.querySelectorAll('#refineSupplierTypePills .pill').forEach(x=>x.classList.remove('selected'));
+  p.classList.add('selected');
+}));
+
+function refineSelectAllCountries(){
+  document.querySelectorAll('#refineCountryCheckboxes .country-check').forEach(el=>{
+    if(el.id==='refineOtherCountryCheck') return;
+    el.classList.add('selected');
+  });
+}
+
+function refineClearAllCountries(){
+  document.querySelectorAll('#refineCountryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
+  document.getElementById('refineOtherCountryInput').style.display='none';
+  refineCommodityContinents.clear();
+  document.querySelectorAll('#refineContinentPills .pill').forEach(p=>p.classList.remove('selected'));
+}
+
 function openRefineModal(){
-  document.getElementById('refineCommodity').value=currentCommodity!=='[see attached image]'?currentCommodity:'';
-  document.getElementById('refineCerts').value=currentCerts;
+  // Pre-populate description / company name
+  const descLabel=document.getElementById('refineDescriptionLabel');
+  if(currentMode==='company'){
+    descLabel.textContent='Target Company';
+    document.getElementById('refineCommodity').placeholder='e.g. Boeing, Tesla, Patagonia...';
+    document.getElementById('refineCommodity').value=currentCompanyName||'';
+  } else {
+    descLabel.textContent='Sourcing Description';
+    document.getElementById('refineCommodity').placeholder='Refine or update your sourcing description...';
+    document.getElementById('refineCommodity').value=currentCommodity!=='[see attached image]'?currentCommodity:'';
+  }
+
+  // Show only the relevant geography section
+  const isCompany = currentMode==='company';
+  document.getElementById('refineCommodityGeo').style.display = isCompany ? 'none' : '';
+  document.getElementById('refineCompanyGeo').style.display   = isCompany ? '' : 'none';
+
+  if(isCompany){
+    // Company-mode geo: scope, continents, free-text countries
+    document.querySelectorAll('#refineCompanyGeoPills .pill').forEach(p=>{
+      p.classList.toggle('selected', p.dataset.val===currentCompanyGeoScope);
+    });
+    document.querySelectorAll('#refineCompanyContinentPills .pill').forEach(p=>{
+      p.classList.toggle('selected', currentContinents.includes(p.dataset.val));
+    });
+    document.getElementById('refineCompanyCountriesInput').value=currentCompanyGeoCountries||'';
+  } else {
+    // Commodity-mode geo: country checks + continent pills
+    // Build a Set of canonical country names for fast lookup
+    const knownCountryEls=document.querySelectorAll('#refineCountryCheckboxes .country-check');
+    const knownNames=new Set();
+    knownCountryEls.forEach(el=>{ if(el.id!=='refineOtherCountryCheck') knownNames.add(el.dataset.val); });
+
+    // Reset all checks
+    knownCountryEls.forEach(el=>el.classList.remove('selected'));
+    document.getElementById('refineOtherCountryInput').style.display='none';
+
+    // Re-check anything currently in currentCountries that has a pill
+    const otherCountries=[];
+    (currentCountries||[]).forEach(c=>{
+      if(knownNames.has(c)){
+        const el=document.querySelector(`#refineCountryCheckboxes .country-check[data-val="${CSS.escape(c)}"]`);
+        if(el) el.classList.add('selected');
+      } else {
+        otherCountries.push(c);
+      }
+    });
+    if(otherCountries.length){
+      document.getElementById('refineOtherCountryCheck').classList.add('selected');
+      document.getElementById('refineOtherCountryInput').style.display='block';
+      document.getElementById('refineCountryInput').value=otherCountries.join(', ');
+    } else {
+      document.getElementById('refineCountryInput').value='';
+    }
+
+    // Continent pills are NOT auto-selected from currentCountries — they're an
+    // expand-on-submit shortcut. We just make sure they reflect refineCommodityContinents
+    // (which we reset on each open).
+    refineCommodityContinents.clear();
+    document.querySelectorAll('#refineContinentPills .pill').forEach(p=>p.classList.remove('selected'));
+  }
+
+  // Supplier type
+  document.querySelectorAll('#refineSupplierTypePills .pill').forEach(p=>{
+    p.classList.toggle('selected', p.dataset.val===currentSupplierType);
+  });
+
+  // Certs & HTS
+  document.getElementById('refineCerts').value=currentCerts||'';
+  document.getElementById('refineHts').value=currentHts||'';
+
   document.getElementById('refineModal').classList.add('active');
 }
+
 function closeRefineModal(){ document.getElementById('refineModal').classList.remove('active'); }
+
+// Build the refined country list using the same expand-on-submit logic as the main form
+function getRefineSelectedCountries(){
+  const seen=new Set();
+  const selected=[];
+  const add=(name)=>{
+    if(!name) return;
+    const key=name.toLowerCase().trim();
+    if(!key||seen.has(key)) return;
+    seen.add(key);
+    selected.push(name);
+  };
+  document.querySelectorAll('#refineCountryCheckboxes .country-check.selected').forEach(el=>{
+    if(el.id==='refineOtherCountryCheck') return;
+    add(el.dataset.val);
+  });
+  refineCommodityContinents.forEach(cont=>{
+    (COMMODITY_CONTINENT_COUNTRIES[cont]||[]).forEach(add);
+  });
+  const otherCheck=document.getElementById('refineOtherCountryCheck');
+  if(otherCheck&&otherCheck.classList.contains('selected')){
+    const otherVal=document.getElementById('refineCountryInput').value.trim();
+    if(otherVal) otherVal.split(',').map(c=>c.trim()).filter(Boolean).forEach(add);
+  }
+  return selected;
+}
+
 async function runRefinedSearch(){
   const newCommodity=document.getElementById('refineCommodity').value.trim();
   const newCerts=document.getElementById('refineCerts').value.trim();
   const newHts=document.getElementById('refineHts').value.trim();
   if(!newCommodity){showToast('Please enter a description');return;}
+
   if(currentMode==='company'){
     currentCompanyName=newCommodity;
     currentCommodity=newCommodity; // used for display
+
+    // Company-mode geo: scope + continents + free-text countries
+    const scopeEl=document.querySelector('#refineCompanyGeoPills .pill.selected');
+    if(scopeEl) currentCompanyGeoScope=scopeEl.dataset.val;
+    currentContinents=[...document.querySelectorAll('#refineCompanyContinentPills .pill.selected')].map(el=>el.dataset.val);
+    currentCompanyGeoCountries=document.getElementById('refineCompanyCountriesInput').value.trim();
   } else {
     currentCommodity=newCommodity;
+
+    // Commodity-mode geo: rebuild currentCountries from modal selections
+    currentCountries=getRefineSelectedCountries();
   }
-  currentCerts=newCerts; currentHts=newHts;
+
+  // Supplier type
+  const stEl=document.querySelector('#refineSupplierTypePills .pill.selected');
+  if(stEl){
+    currentSupplierType=stEl.dataset.val;
+    supplierType=stEl.dataset.val; // keep main-form variable in sync for any subsequent toggles
+    // Reflect in the main form pills so reopening matches
+    document.querySelectorAll('#supplierTypePills .pill').forEach(p=>{
+      p.classList.toggle('selected', p.dataset.val===currentSupplierType);
+    });
+  }
+
+  currentCerts=newCerts;
+  currentHts=newHts;
+
+  // Mirror commodity-mode country selections back into the main form so the
+  // user sees the new state if they hit "New Search" later.
+  if(currentMode!=='company'){
+    const knownCountryEls=document.querySelectorAll('#countryCheckboxes .country-check');
+    knownCountryEls.forEach(el=>{
+      if(el.id==='otherCountryCheck') return;
+      el.classList.toggle('selected', currentCountries.includes(el.dataset.val));
+    });
+  }
+
   closeRefineModal();
   suppliers=[]; emails=[];
   document.getElementById('resultsPanel').classList.remove('active');
