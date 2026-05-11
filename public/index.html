@@ -175,7 +175,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.2</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.3</div>
   </header>
 
   <div id="inputPanel">
@@ -455,9 +455,14 @@ input[type="date"]:focus { border-color:var(--accent); }
 
     <div id="suppliersTab">
       <div id="supplierGrid"></div>
-      <div style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px;display:flex;align-items:center;justify-content:center;">
-        <button class="btn-sm primary" onclick="searchMoreSources()">&#8853; Search More Sources</button>
-      </div>
+      <!--
+        Footer slot: gets populated by JS with one of three states:
+          1) Search More Sources button (default + after fresh results)
+          2) Inline loading panel (while searching for more)
+          3) Zero-results message with optional retry button
+        See renderSearchMoreButton / renderInlineLoadingPanel / renderZeroResultsMessage.
+      -->
+      <div id="suppliersFooter" style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px;"></div>
     </div>
 
     <div id="emailsTab" style="display:none;">
@@ -603,6 +608,11 @@ let currentMode='commodity', currentCompanyName='';
 let currentCompanyGeoScope='both', currentCompanyGeoCountries='';
 let currentContinents=[];
 let currentDateFrom='', currentDateTo='';
+// Tracks how many "Search More Sources" calls in a row returned zero new
+// suppliers. First zero shows a "Try One More Search" retry button; a second
+// consecutive zero replaces the retry with a "no more sources" message.
+// Resets to 0 whenever fresh suppliers come back or a new search is started.
+let consecutiveZeroResults = 0;
 
 const STEPS={
   domestic:["Searching the web in real time","Aggregating supplier directories & company sites","Extracting & verifying companies","Scoring supplier fit"],
@@ -882,6 +892,67 @@ function setProgress(pct,label){
   document.getElementById('progressLabel').textContent=label;
 }
 
+// ─── Footer slot renderers ────────────────────────────────────────────────
+// The suppliers tab footer is a single container (#suppliersFooter) that
+// swaps between three states as the user interacts with "Search More Sources":
+//   1) Button         — default, after a fresh result, and after errors
+//   2) Inline loading — while a follow-up search is in flight
+//   3) Zero-results   — when a follow-up search returned no new suppliers
+//
+// Each renderer fully replaces the footer's innerHTML so we don't have to
+// micromanage element visibility.
+
+function renderSearchMoreButton(){
+  document.getElementById('suppliersFooter').innerHTML =
+    '<div style="display:flex;align-items:center;justify-content:center;">'
+    +'<button class="btn-sm primary" onclick="searchMoreSources()">&#8853; Search More Sources</button>'
+    +'</div>';
+}
+
+function renderInlineLoadingPanel(){
+  // Mounts a copy of the loading panel inline in the suppliers tab footer.
+  // Uses distinct IDs (inlineProgressFill / inlineProgressLabel / inlineLoaderSteps)
+  // so it doesn't collide with the top-of-page loading panel used on the first search.
+  document.getElementById('suppliersFooter').innerHTML =
+    '<div class="loading-panel active" id="inlineLoadingPanel" style="display:block;">'
+    +'<div class="loader-title">Searching supplier networks...</div>'
+    +'<div class="progress-track"><div class="progress-fill" id="inlineProgressFill"></div></div>'
+    +'<div class="progress-label" id="inlineProgressLabel">0%</div>'
+    +'<div class="loader-steps" id="inlineLoaderSteps"></div>'
+    +'</div>';
+  // Gentle scroll so the panel is visible if it ended up just below the fold.
+  setTimeout(()=>{
+    const panel=document.getElementById('inlineLoadingPanel');
+    if(panel) panel.scrollIntoView({behavior:'smooth',block:'nearest'});
+  },50);
+}
+
+function setInlineProgress(pct,label){
+  const fill=document.getElementById('inlineProgressFill');
+  const lbl=document.getElementById('inlineProgressLabel');
+  if(fill) fill.style.width=pct+'%';
+  if(lbl) lbl.textContent=label;
+}
+
+function renderZeroResultsMessage(canRetry){
+  // canRetry=true after the FIRST zero-result follow-up — offer one more try.
+  // canRetry=false after a second consecutive zero — stop offering retries
+  // (user can still use "New Search" or "Refine Search" from the toolbar).
+  let html =
+    '<div style="background:var(--surface);border:1px solid var(--border2);padding:18px 22px;text-align:center;margin-bottom:14px;">'
+    +'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;">No new suppliers found</div>'
+    +'<div style="font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text3);line-height:1.7;">The existing results may already cover the most relevant sources for this search.</div>'
+    +'</div>';
+  if(canRetry){
+    html += '<div style="display:flex;align-items:center;justify-content:center;">'
+      +'<button class="btn-sm primary" onclick="searchMoreSources()">&#8853; Try One More Search</button>'
+      +'</div>';
+  } else {
+    html += '<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);text-align:center;letter-spacing:0.05em;">// NO MORE NEW SUPPLIERS AVAILABLE — TRY "REFINE SEARCH" OR "NEW SEARCH" //</div>';
+  }
+  document.getElementById('suppliersFooter').innerHTML = html;
+}
+
 async function runSearch(){
   const commodity=document.getElementById('commodityInput').value.trim();
   const certs=document.getElementById('certInput').value.trim();
@@ -916,13 +987,23 @@ async function runSearch(){
   currentSupplierType=supplierType;
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
+  consecutiveZeroResults = 0; // fresh search — reset the zero-results counter
   const scope=getScopeFromCountries(currentCountries);
   await _executeSearch(currentCommodity, scope, certs, currentCountries.filter(c=>c!=='USA').join(', '), hts, true);
 }
 
 async function _executeSearch(commodity, searchScope, certs, countries, hts, isFirst){
-  document.getElementById('loadingPanel').classList.add('active');
-  setProgress(0,'Starting...');
+  // First-run searches use the big top-of-page loading panel (after the input
+  // panel is hidden). Follow-up "Search More Sources" calls render an inline
+  // loading panel into the suppliers tab footer instead, so the user stays
+  // anchored to the bottom of the existing supplier list.
+  if(isFirst){
+    document.getElementById('loadingPanel').classList.add('active');
+    setProgress(0,'Starting...');
+  } else {
+    renderInlineLoadingPanel();
+    setInlineProgress(0,'Starting...');
+  }
 
   // Email campaign is never used in company mode
   const wantEmails = includeEmails && currentMode !== 'company';
@@ -933,18 +1014,22 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   const stepKey = (currentMode === 'company') ? 'company' : searchScope;
   const baseSteps=[...STEPS[stepKey]];
   if(wantEmails&&isFirst) baseSteps.push('Drafting email campaign');
-  const stepsEl=document.getElementById('loaderSteps');
+
+  const stepsEl = isFirst
+    ? document.getElementById('loaderSteps')
+    : document.getElementById('inlineLoaderSteps');
   stepsEl.innerHTML=baseSteps.map(s=>'<div class="loader-step">&#8594; '+s+'</div>').join('');
   const stepEls=stepsEl.querySelectorAll('.loader-step');
   const supplierStepCount=baseSteps.length-((wantEmails&&isFirst)?1:0);
   const supplierPct=(wantEmails&&isFirst)?60:100;
+  const progressFn = isFirst ? setProgress : setInlineProgress;
   let i=0;
   const interval=setInterval(()=>{
     if(i<stepEls.length){
       if(i>0) stepEls[i-1].classList.add('done');
       stepEls[i].classList.add('visible');
       const pct=i<supplierStepCount?Math.round((i+1)/supplierStepCount*supplierPct):Math.round(supplierPct+((i-supplierStepCount+1))*(100-supplierPct));
-      setProgress(Math.min(pct,92),baseSteps[i]);
+      progressFn(Math.min(pct,92),baseSteps[i]);
       i++;
     } else clearInterval(interval);
   },950);
@@ -955,15 +1040,21 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       (pastedImageData&&isFirst)?pastedImageData:null,
       (pastedImageType&&isFirst)?pastedImageType:null);
 
+    let freshSuppliers = []; // only the newly-added (dedup'd) suppliers
     if(isFirst){
       suppliers=newSuppliers;
+      consecutiveZeroResults = 0;
     } else {
       const existingNames=new Set(suppliers.map(s=>s.name.toLowerCase().trim()));
-      const fresh=newSuppliers.filter(s=>!existingNames.has(s.name.toLowerCase().trim()));
-      const startId=suppliers.length+1;
-      fresh.forEach((s,idx)=>s.id=startId+idx);
-      suppliers=[...suppliers,...fresh];
-      showToast(fresh.length+' new suppliers added!');
+      freshSuppliers=newSuppliers.filter(s=>!existingNames.has(s.name.toLowerCase().trim()));
+      if(freshSuppliers.length > 0){
+        const startId=suppliers.length+1;
+        freshSuppliers.forEach((s,idx)=>s.id=startId+idx);
+        suppliers=[...suppliers,...freshSuppliers];
+        consecutiveZeroResults = 0;
+      } else {
+        consecutiveZeroResults++;
+      }
     }
 
     if(wantEmails&&isFirst){
@@ -972,24 +1063,37 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     }
 
     clearInterval(interval);
-    setProgress(100,'Complete!');
+    progressFn(100,'Complete!');
     setTimeout(()=>{
-      document.getElementById('loadingPanel').classList.remove('active');
       if(isFirst){
+        document.getElementById('loadingPanel').classList.remove('active');
         renderResults(commodity);
       } else {
         document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
-        renderSupplierCards();
+        if(freshSuppliers.length > 0){
+          // Append-only render so existing cards don't re-animate.
+          appendSupplierCards(freshSuppliers);
+          renderSearchMoreButton();
+          showToast(freshSuppliers.length+' new supplier'+(freshSuppliers.length===1?'':'s')+' added!');
+        } else {
+          // Show the message + maybe a retry button. Retry only allowed once
+          // per consecutive zero-result streak (consecutiveZeroResults===1).
+          const canRetry = consecutiveZeroResults < 2;
+          renderZeroResultsMessage(canRetry);
+        }
       }
     },400);
   }catch(err){
     clearInterval(interval);
-    document.getElementById('loadingPanel').classList.remove('active');
     if(isFirst){
+      document.getElementById('loadingPanel').classList.remove('active');
       document.getElementById('inputPanel').style.display='block';
       showError('Search failed: '+err.message);
     } else {
-      showError('Search failed: '+err.message);
+      // Restore the button so the user can retry; surface the error as a toast
+      // since the inputPanel-bound error panel isn't visible from results view.
+      renderSearchMoreButton();
+      showToast('Search failed: '+err.message);
     }
   }
 }
@@ -1210,6 +1314,7 @@ async function runRefinedSearch(){
 
   closeRefineModal();
   suppliers=[]; emails=[];
+  consecutiveZeroResults = 0; // refined search counts as a fresh search
   document.getElementById('resultsPanel').classList.remove('active');
   const scope=getScopeFromCountries(currentCountries);
   await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, true);
@@ -1248,6 +1353,9 @@ function renderResults(commodity){
   document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
   document.getElementById('emailTab').style.display=emails.length?'block':'none';
   renderSupplierCards();
+  // Footer starts in the "default button" state. searchMoreSources() will
+  // swap it for the inline loading panel and back, depending on outcome.
+  renderSearchMoreButton();
   renderEmailCards();
 }
 
@@ -1274,9 +1382,53 @@ function getSourceSearchUrl(source){
   return 'https://www.google.com/search?q='+encodeURIComponent(query)+'+manufacturer+supplier';
 }
 
-function renderSupplierCards(){
+// Builds a single supplier card DOM node. Factored out of renderSupplierCards
+// so we can also append individual cards on "Search More Sources" without
+// clearing & rebuilding the entire grid (which would re-trigger the fade-in
+// animation on every existing card).
+function buildSupplierCard(s){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
+  const d=document.createElement('div');
+  d.className='supplier-card fade-in';
+  d.dataset.id=s.id; d.dataset.fit=s.fit;
+  const fc=fitColor(s.fit);
+  const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
+
+  const websiteUrl=s.website?(s.website.startsWith('http')?s.website:'https://'+s.website):'';
+  const websiteHtml=websiteUrl
+    ?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>'
+    :'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
+  const sourceUrl=getSourceSearchUrl(s.source);
+  const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a></div>';
+  const verifyUrl='https://www.google.com/search?q='+encodeURIComponent('"'+s.name+'" '+currentCommodity+' manufacturer');
+  const verifyBtn='<div style="margin-top:8px;"><a href="'+verifyUrl+'" target="_blank" onclick="event.stopPropagation()" class="btn-verify">&#128269; Verify on Google</a></div>';
+
+  d.innerHTML=
+    '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
+    +'<div class="card-num">'+String(s.id).padStart(2,'0')+'</div>'
+    +'<div class="card-body">'
+      +'<div class="card-name">'+s.name+'</div>'
+      +'<div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div>'
+      +'<div class="card-tags">'+tags+'</div>'
+      +verifyBtn
+      +'<div class="card-expand">'
+        +'<p>'+s.specialty+'</p>'
+        +'<p class="note">'+s.fitReason+'</p>'
+        +websiteHtml
+        +sourceHtml
+      +'</div>'
+    +'</div>'
+    +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
+
+  d.querySelector('.card-body').addEventListener('click', e => {
+    if(e.target.closest('a')) return;
+    d.classList.toggle('expanded');
+  });
+  return d;
+}
+
+function renderSupplierCards(){
   const grid=document.getElementById('supplierGrid');
   grid.innerHTML='';
 
@@ -1293,45 +1445,21 @@ function renderSupplierCards(){
     return;
   }
 
-  suppliers.forEach(s=>{
-    const d=document.createElement('div');
-    d.className='supplier-card fade-in';
-    d.dataset.id=s.id; d.dataset.fit=s.fit;
-    const fc=fitColor(s.fit);
-    const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
+  suppliers.forEach(s=>grid.appendChild(buildSupplierCard(s)));
+  applyFitFilter();
+}
 
-    const websiteUrl=s.website?(s.website.startsWith('http')?s.website:'https://'+s.website):'';
-    const websiteHtml=websiteUrl
-      ?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>'
-      :'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
-    const sourceUrl=getSourceSearchUrl(s.source);
-    const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a></div>';
-    const verifyUrl='https://www.google.com/search?q='+encodeURIComponent('"'+s.name+'" '+currentCommodity+' manufacturer');
-    const verifyBtn='<div style="margin-top:8px;"><a href="'+verifyUrl+'" target="_blank" onclick="event.stopPropagation()" class="btn-verify">&#128269; Verify on Google</a></div>';
-
-    d.innerHTML=
-      '<div class="card-checkbox"><input type="checkbox" checked onclick="event.stopPropagation()"></div>'
-      +'<div class="card-num">'+String(s.id).padStart(2,'0')+'</div>'
-      +'<div class="card-body">'
-        +'<div class="card-name">'+s.name+'</div>'
-        +'<div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div>'
-        +'<div class="card-tags">'+tags+'</div>'
-        +verifyBtn
-        +'<div class="card-expand">'
-          +'<p>'+s.specialty+'</p>'
-          +'<p class="note">'+s.fitReason+'</p>'
-          +websiteHtml
-          +sourceHtml
-        +'</div>'
-      +'</div>'
-      +'<div class="fit-badge" style="color:'+fc+';border-color:'+fc+';background:'+fc+'18">'+fitLabel(s.fit)+'</div>';
-
-    d.querySelector('.card-body').addEventListener('click', e => {
-      if(e.target.closest('a')) return;
-      d.classList.toggle('expanded');
-    });
-    grid.appendChild(d);
-  });
+// Appends only the given new suppliers to the existing grid. Used by
+// "Search More Sources" so we get continued numbering, no scroll jumps,
+// and fade-in animation only on the new cards.
+function appendSupplierCards(newSuppliers){
+  const grid=document.getElementById('supplierGrid');
+  // If the grid currently shows the "no suppliers found" empty state, clear it
+  // before appending — otherwise the new cards would render below that message.
+  if(grid.querySelector('.supplier-card')===null){
+    grid.innerHTML='';
+  }
+  newSuppliers.forEach(s=>grid.appendChild(buildSupplierCard(s)));
   applyFitFilter();
 }
 
@@ -1475,6 +1603,7 @@ function reset(){
   document.querySelectorAll('#continentPills .pill').forEach(p=>p.classList.remove('selected'));
   currentDateFrom=''; currentDateTo='';
   useDateRange=false;
+  consecutiveZeroResults = 0;
   const dateToggle=document.getElementById('dateRangeToggle');
   if(dateToggle){
     dateToggle.classList.remove('on');
@@ -1513,6 +1642,9 @@ function reset(){
   suppliers=[]; emails=[];
   document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
   document.querySelector('.fit-filter[data-fit="all"]').classList.add('active');
+  // Clear the footer slot too — it'll be re-rendered on the next successful search.
+  const footer=document.getElementById('suppliersFooter');
+  if(footer) footer.innerHTML='';
   switchTab('suppliers',document.querySelector('.tab'));
 }
 </script>
