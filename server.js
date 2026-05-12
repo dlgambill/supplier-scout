@@ -229,22 +229,18 @@ const CONTINENT_LABELS = {
 };
 
 // Determine which continent (if any) a location belongs to.
-// Returns continent key like 'europe', or null if it can't be classified.
 function classifyContinent(location) {
   if (!location) return null;
   const upper = location.toUpperCase();
-  // Check trailing comma-separated token first (most common: "City, Country")
   const parts = upper.split(',').map(p => p.trim()).filter(Boolean);
-  const candidates = parts.slice(-2); // last two tokens, in case it's "City, State, Country"
+  const candidates = parts.slice(-2);
   for (const candidate of candidates.reverse()) {
     for (const [continent, countries] of Object.entries(CONTINENT_COUNTRIES)) {
       if (countries.has(candidate)) return continent;
     }
   }
-  // Fall back to substring match against the full uppercased string
   for (const [continent, countries] of Object.entries(CONTINENT_COUNTRIES)) {
     for (const country of countries) {
-      // Use word boundaries to avoid false matches (e.g. "Indiana" matching "INDIA")
       const rx = new RegExp(`\\b${country.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
       if (rx.test(upper)) return continent;
     }
@@ -253,41 +249,27 @@ function classifyContinent(location) {
 }
 
 // ── Non-supplier exclusion patterns for company-search mode ─────────────────
-// These match entities that show up in search results around a target company
-// but are not vendors (customers, regulators, schools, news, etc).
-//
-// IMPORTANT: Patterns must be specific enough that they don't false-match real
-// industrial suppliers. Generic single words like "institute", "authority",
-// "agency", "news", "journal" are too broad on their own — anchor them to
-// type-indicator positions or distinctive phrases.
 const NON_SUPPLIER_PATTERNS = [
-  // Education & research — match only when these words clearly indicate the entity type
   /\buniversity (of|at)\b/i, /\bof [a-z\- ]{3,40} university\b/i,
   /\b(community |state |technical )?college\b/i, /\binstitute of technology\b/i,
   /\bschool of (engineering|business|medicine|law|public health)\b/i,
   /\b(state|technical) polytechnic\b/i, /\bpolytechnic university\b/i,
   /\bnational lab(oratory|oratories)?\b/i, /\b(research|teaching) hospital\b/i,
   /\bfraunhofer\b/i, /\b(mit|caltech|stanford|berkeley|harvard) (university|laboratory|lab)\b/i,
-  // Government — US (specific named agencies and clear type prefixes)
   /^(u\.?s\.? )?department of\b/i, /\bu\.?s\.? department of\b/i,
   /\bministry of\b/i,
   /^(federal|state|us|u\.s\.) (bureau|administration|agency|commission|department)\b/i,
   /\b(faa|fcc|fda|epa|nasa|usda|gsa|nih|nsf|doe|dod|dol|dot|nrc|sec\.gov|irs)\b/i,
   /\b(us|u\.s\.|united states) (army|navy|air force|marine corps|coast guard|space force)\b/i,
   /\bdefense logistics agency\b/i, /\bpentagon\b/i,
-  // Government — generic / foreign
   /^government of\b/i, /^city of\b/i, /^state of\b/i, /^county of\b/i,
   /\b(port|housing|transit|water) authority\b/i, /\bcity council\b/i,
-  // Standards / certification / non-profit (prefer named bodies + clear type indicators)
   /\b(iso|astm international|ieee|sae international|ansi|underwriters laboratories|ul llc)\b/i,
   /\bnon-?profit\b/i, /\bcharitable foundation\b/i,
   /\b[a-z ]+ trade association\b/i, /\b[a-z ]+ industry association\b/i,
-  // Media / analyst / publishing (specific outlets only)
   /\b(reuters|bloomberg news|bloomberg l\.?p\.?|cnbc|wsj|wall street journal|new york times|nyt|forbes|fortune magazine|bbc|cnn|axios|the guardian|financial times|barron'?s)\b/i,
   /\b(gartner|forrester research|idc research|moody'?s|s&p global|fitch ratings|morningstar)\b/i,
-  // Aggregators / directories themselves
   /\b(importyeti|panjiva|datamyne|thomasnet|kompass|global ?sources|sec\.gov|crunchbase|dun ?& ?bradstreet)\b/i,
-  // Generic placeholders / non-entities
   /^(various|multiple) (suppliers|vendors)$/i, /^(undisclosed|confidential)$/i, /^n\/?a$/i,
   /^supplier #?\d+$/i, /^vendor #?\d+$/i
 ];
@@ -311,7 +293,6 @@ function isSelfOrSubsidiary(name, targetCompany) {
   const b = targetCompany.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
   if (!a || !b) return false;
   if (a === b) return true;
-  // "Boeing" matches "Boeing Company" / "The Boeing Company" / "Boeing Defense"
   if (a.includes(b) && b.length >= 4) return true;
   if (b.includes(a) && a.length >= 4) return true;
   return false;
@@ -319,9 +300,9 @@ function isSelfOrSubsidiary(name, targetCompany) {
 
 
 // ── Gemini call with model cascade ────────────────────────────────────────
-// Quality-first cascade. Pro leads — Flash variants only kick in if Pro is rate-limited
-// or fails. Flash-Lite was removed because its grounded-search behavior on long prompts
-// is unreliable (token exhaustion, empty content blocks).
+// Quality-first cascade: Pro → 2.5 Flash → 1.5 Flash. Used by /api/email
+// where a simple top-down try works. /api/search calls each model individually
+// so it can fall through to Claude in the right order.
 const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'];
 
 async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
@@ -353,6 +334,8 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
   );
   if (!res.ok) {
     const err = await res.text();
+    // Surface the real status & body so we can see rate limits / bad keys in the logs
+    console.error(`  [${model}] HTTP ${res.status}: ${err.substring(0, 400)}`);
     throw new Error(`Gemini API error ${res.status}: ${err.substring(0, 200)}`);
   }
   const data = await res.json();
@@ -362,6 +345,10 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
 
   if (!text) {
     console.warn(`${model} returned empty content. finishReason: ${finishReason}. Trying follow-up...`);
+    // Diagnostic: log the full candidate so we can see what came back
+    try {
+      console.warn(`  [${model}] full candidate:`, JSON.stringify(candidate || {}).substring(0, 600));
+    } catch (e) { /* ignore */ }
     const geoReminder = scope === 'foreign'
       ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.`
                    : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
@@ -410,46 +397,6 @@ async function callClaude(prompt, anthropicKey, expectArray = true) {
   return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
 }
 
-// ── Perplexity Sonar API call ──────────────────────────────────────────────
-// Sonar's grounded retrieval is purpose-built for "find all entities matching
-// these criteria." Returns text + a separate citations array we splice into
-// supplier source fields downstream.
-async function callPerplexity(prompt, perplexityKey, systemInstruction = '') {
-  // Sonar Pro: base was returning empty arrays / refusals on the elaborate prompt.
-  // Pro does deeper multi-source retrieval and handles long structured prompts better.
-  // Cost: ~$3 input / $15 output per 1M tokens — roughly 2-3¢ per search at our prompt sizes.
-  const PERPLEXITY_MODEL = 'sonar-pro';
-  const messages = [];
-  if (systemInstruction) messages.push({ role: 'system', content: systemInstruction });
-  messages.push({ role: 'user', content: prompt });
-
-  const res = await fetch('https://api.perplexity.ai/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${perplexityKey}`
-    },
-    body: JSON.stringify({
-      model: PERPLEXITY_MODEL,
-      messages,
-      max_tokens: 4000,
-      temperature: 0.1,
-      // search_recency_filter could be added later if we want a hard date floor
-      return_citations: true
-    })
-  });
-  const data = await res.json();
-  if (!res.ok) {
-    const msg = (data && (data.error?.message || data.message)) || `HTTP ${res.status}`;
-    throw new Error(`Perplexity: ${msg}`);
-  }
-  const text = data.choices?.[0]?.message?.content || '';
-  const citations = data.citations || [];
-  if (!text.trim()) throw new Error('Perplexity returned empty content');
-  console.log(`Perplexity returned ${text.length} chars, ${citations.length} citations`);
-  return { text, citations };
-}
-
 function cleanCommodity(commodity) {
   return commodity
     .replace(/wholesale\s*only/gi, '').replace(/no\s*retail/gi, '')
@@ -461,11 +408,10 @@ function cleanCommodity(commodity) {
 
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
-  const geminiKey     = process.env.GEMINI_API_KEY;
-  const anthropicKey  = process.env.ANTHROPIC_API_KEY;
-  const perplexityKey = process.env.PERPLEXITY_API_KEY;
+  const geminiKey    = process.env.GEMINI_API_KEY;
+  const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
-  if (!perplexityKey && !geminiKey && !anthropicKey) {
+  if (!geminiKey && !anthropicKey) {
     return res.status(500).json({ error: 'No API keys configured' });
   }
 
@@ -475,7 +421,6 @@ app.post('/api/search', async (req, res) => {
     const searchMode = (mode === 'company') ? 'company' : 'commodity';
     const targetCompany = (companyName || '').trim();
 
-    // Validate date range — accept only YYYY-MM-DD strings; ignore otherwise
     const dateRx = /^\d{4}-\d{2}-\d{2}$/;
     const validDateFrom = (dateFrom && dateRx.test(dateFrom)) ? dateFrom : '';
     const validDateTo   = (dateTo   && dateRx.test(dateTo))   ? dateTo   : '';
@@ -485,7 +430,6 @@ app.post('/api/search', async (req, res) => {
     let validContinents = [];
 
     if (searchMode === 'company') {
-      // Company mode geo: scope (domestic/foreign/both) + optional continents + optional country list
       const extraCountries = (companyGeoCountries || '').trim();
       validContinents = Array.isArray(companyContinents)
         ? companyContinents.filter(c => CONTINENT_LABELS[c])
@@ -497,8 +441,6 @@ app.post('/api/search', async (req, res) => {
       const parts = [];
       if (companyGeoScope === 'domestic') parts.push('United States ONLY');
       else if (companyGeoScope === 'foreign') parts.push('foreign countries (NOT the United States)');
-      // 'both' adds nothing — implies global
-
       if (continentLabel) parts.push(`continents: ${continentLabel}`);
       if (extraCountries) parts.push(`countries: ${extraCountries}`);
 
@@ -529,23 +471,14 @@ app.post('/api/search', async (req, res) => {
       ? sources.map(s => `"${cleanedCommodity}" site:${s.toLowerCase().replace(/\s/g,'')}.com`).join(', ')
       : `"${cleanedCommodity}" site:thomasnet.com`;
 
-    // Build engine-specific prompts. Different models respond differently to the same
-    // instructions: Gemini does well with strict "HARD-FAIL" framing, Perplexity Sonar
-    // applies it too literally and returns []. Claude has no live search so multi-search
-    // instructions are wasted on it.
+    // Build prompt for Gemini (strict "HARD-FAIL" language works well) or Claude (no live search).
     function buildPrompts(engine) {
-      const isPerplexity = engine === 'perplexity';
       const isClaude = engine === 'claude';
 
-      // Strict-vs-permissive language toggles
-      const hardFail = isPerplexity ? 'should not be included' : 'are HARD-FAILS';
-      const zeroTolerance = isPerplexity ? '[INCLUSION CRITERIA]' : '[OUTPUT RULES - ZERO TOLERANCE]';
-      const mustCiteEvidence = isPerplexity
-        ? 'Each entry should describe evidence found (e.g. mention in 10-K, ImportYeti record, press release).'
-        : 'Each entry needs specific evidence (named in a filing, listed on a supplier diversity page, appears in import records).';
-      const refusalGuard = isPerplexity
-        ? `If your first search returns mostly the target's customers or distributors, run 2-3 more searches with different queries before concluding. It is acceptable to include suppliers with moderate evidence (single press release, single news mention) ranked as "low" or "medium" fit. Returning fewer than 5 suppliers when the target has any public supplier disclosures suggests insufficient research depth.`
-        : `Returning an empty array or a diagnostic explanation of why you couldn't find suppliers is a failure mode — research harder.`;
+      const hardFail = 'are HARD-FAILS';
+      const zeroTolerance = '[OUTPUT RULES - ZERO TOLERANCE]';
+      const mustCiteEvidence = 'Each entry needs specific evidence (named in a filing, listed on a supplier diversity page, appears in import records).';
+      const refusalGuard = `Returning an empty array or a diagnostic explanation of why you couldn't find suppliers is a failure mode — research harder.`;
 
       let sysInstruction, prompt;
 
@@ -570,7 +503,6 @@ Exclude: customers (entities the target sells to), competitors, government agenc
 
 Output format: raw JSON array only. No markdown code blocks. No preamble. No explanatory notes. Start with [ and end with ].`;
 
-        // Build geography directive — make this a hard rule, not a hint
         let geoDirective = '';
         if (companyGeoScope === 'domestic') {
           geoDirective = `\n[GEOGRAPHY — HARD CONSTRAINT]\nReturn ONLY suppliers headquartered or with primary manufacturing in the UNITED STATES. Foreign suppliers — even if they have US offices — ${hardFail}. The location field of every result must end with a US state (e.g. "Detroit, MI" or "Detroit, MI, USA").`;
@@ -585,7 +517,6 @@ Output format: raw JSON array only. No markdown code blocks. No preamble. No exp
           geoDirective += `\nFocus particularly on these countries: ${companyGeoCountries.trim()}.`;
         }
 
-        // Build optional date-range section
         const dateRangeSection = hasDateRange
           ? `\n[DATE RANGE — EVIDENCE PREFERENCE]\nStrongly prefer evidence (bills of lading, SEC filings, press releases, news articles, supplier diversity pages) dated between ${validDateFrom} and ${validDateTo}.\n- Rank suppliers with evidence in this window highest.\n- It is acceptable to include a strongly-supported supplier whose only public mention is outside this window, but rank it lower and note the evidence date in fitReason.\n- Do NOT fabricate dates. If you cannot determine when the evidence is from, do not invent one.\n`
           : '';
@@ -710,21 +641,13 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       return { systemInstruction: sysInstruction, supplierPrompt: prompt };
     }
 
-    // Validate company mode has a target
     if (searchMode === 'company' && !targetCompany) {
       return res.status(400).json({ error: 'companyName is required for company search mode' });
     }
 
-
     let responseText;
-    let perplexityCitations = [];
     let usedProvider = null;
-    let perplexityRaw = null; // keep raw output around for diagnostic & fallback
 
-    // Image searches must use Gemini (Perplexity API doesn't accept images).
-    const hasImage = !!(imageData && imageType);
-
-    // Helper that runs a single Gemini model with engine='gemini' prompts
     async function tryGeminiModel(modelName) {
       const prompts = buildPrompts('gemini');
       console.log(`Trying Gemini model: ${modelName}`);
@@ -736,46 +659,16 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
     }
 
     // Provider 1: Gemini 2.5 Pro — empirically the strongest for our prompt structure.
-    // Returns 10-20 suppliers consistently on both modes.
     if (geminiKey) {
       try {
         responseText = await tryGeminiModel('gemini-2.5-pro');
         if (responseText) usedProvider = 'gemini';
       } catch (err) {
-        console.warn(`gemini-2.5-pro failed: ${err.message}. Trying Perplexity next...`);
+        console.warn(`gemini-2.5-pro failed: ${err.message}. Trying Gemini 2.5 Flash...`);
       }
     }
 
-    // Provider 2: Perplexity Sonar Pro with permissive prompt — strong when it works,
-    // and a different retrieval pipeline that may surface suppliers Gemini missed.
-    // Skipped for image searches (Perplexity API doesn't accept images).
-    if (!responseText && !hasImage && perplexityKey) {
-      try {
-        const prompts = buildPrompts('perplexity');
-        console.log('Calling Perplexity Sonar Pro...');
-        const result = await callPerplexity(prompts.supplierPrompt, perplexityKey, prompts.systemInstruction);
-        perplexityRaw = result.text;
-        perplexityCitations = result.citations || [];
-        console.log('=== PERPLEXITY RAW (first 800 chars) ===');
-        console.log(perplexityRaw.substring(0, 800));
-        console.log('=== END PERPLEXITY RAW ===');
-        let preflightSuppliers = null;
-        try { preflightSuppliers = parseJSON(perplexityRaw); }
-        catch (parseErr) { console.warn('Perplexity output failed JSON pre-flight parse:', parseErr.message); }
-        const preflightCount = Array.isArray(preflightSuppliers) ? preflightSuppliers.length : -1;
-        console.log(`Perplexity pre-flight supplier count: ${preflightCount}`);
-        if (preflightCount > 0) {
-          responseText = perplexityRaw;
-          usedProvider = 'perplexity';
-        } else {
-          console.warn('Perplexity returned 0 parseable suppliers — falling through to Gemini Flash');
-        }
-      } catch (perplexityErr) {
-        console.error('Perplexity failed:', perplexityErr.message);
-      }
-    }
-
-    // Provider 3: Gemini 2.5 Flash — same family as Pro, smaller. Good when Pro is overloaded.
+    // Provider 2: Gemini 2.5 Flash — same family as Pro, smaller and faster.
     if (!responseText && geminiKey) {
       try {
         responseText = await tryGeminiModel('gemini-2.5-flash');
@@ -785,7 +678,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       }
     }
 
-    // Provider 4: Gemini 1.5 Flash — last live-search fallback.
+    // Provider 3: Gemini 1.5 Flash — last live-search fallback.
     if (!responseText && geminiKey) {
       try {
         responseText = await tryGeminiModel('gemini-1.5-flash');
@@ -795,14 +688,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       }
     }
 
-    // If everything failed but we have Perplexity raw output, use it anyway
-    if (!responseText && perplexityRaw) {
-      console.log('All Gemini models failed — using Perplexity raw output despite low pre-flight count');
-      responseText = perplexityRaw;
-      usedProvider = 'perplexity';
-    }
-
-    // Provider 5: Claude Haiku — offline-knowledge final fallback (no live web).
+    // Provider 4: Claude Haiku — offline-knowledge final fallback (no live web).
     if (!responseText && anthropicKey) {
       const prompts = buildPrompts('claude');
       console.log('Using Claude fallback...');
@@ -817,12 +703,9 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       suppliers = parseJSON(responseText);
       if (Array.isArray(suppliers)) {
         const before = suppliers.length;
-        // Geography filter is for commodity searches only.
-        // In company-search mode, real vendors can be anywhere — don't filter them out.
         if (searchMode !== 'company') {
           suppliers = filterByScope(suppliers, scope, countries, selectedCountries);
         } else {
-          // Strip junk + non-supplier entities (universities, agencies, etc) + the target itself
           const beforeExcl = suppliers.length;
           suppliers = suppliers.filter(s => {
             if (!s || !s.name) return false;
@@ -835,8 +718,6 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
               console.log(`Excluding target/subsidiary: ${s.name}`);
               return false;
             }
-            // Self-incriminating fitReason: AI sometimes returns an entity while admitting in
-            // the same field that it's a customer/distributor/reseller, not a supplier
             const reason = (s.fitReason || '') + ' ' + (s.specialty || '');
             if (/\b(customer of|rather than a supplier|not a supplier|is a customer|sells .* products|distributor of|reseller of|retailer of|buys from)\b/i.test(reason)) {
               console.log(`  [self-incriminating fitReason] excluding "${s.name}": ${s.fitReason?.substring(0,100)}`);
@@ -846,10 +727,6 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
           });
           console.log(`Company-mode exclusion filter: ${beforeExcl} → ${suppliers.length}`);
 
-          // Enforce company-mode geography scope
-          // Treat location as "unknown" only when the whole string is a known unknown marker —
-          // NOT when "na" or "unknown" appears as a substring (the old regex matched China,
-          // Argentina, Ghana, etc. as "unknown" because they contain "na").
           const isUnknownLocation = (loc) => {
             const t = (loc || '').trim().toLowerCase();
             return !t || t === 'n/a' || t === 'na' || t === 'unknown' || t === 'not specified' || t === 'not provided' || t === '-' || t === 'tbd';
@@ -860,7 +737,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
               const loc = s.location || '';
               if (isUnknownLocation(loc)) {
                 console.log(`  [domestic filter] excluding "${s.name}" — unknown location`);
-                return false; // unknowns excluded in domestic mode (safer default)
+                return false;
               }
               const passes = isUSLocation(loc);
               if (!passes) console.log(`  [domestic filter] excluding "${s.name}" — non-US location: ${loc}`);
@@ -871,7 +748,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
               const loc = s.location || '';
               if (isUnknownLocation(loc)) {
                 console.log(`  [foreign filter] excluding "${s.name}" — unknown location`);
-                return false; // unknowns excluded in foreign mode too
+                return false;
               }
               const passes = !isUSLocation(loc);
               if (!passes) console.log(`  [foreign filter] excluding "${s.name}" — US location: ${loc}`);
@@ -879,7 +756,6 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
             });
           }
 
-          // Apply continent filter on top, if any continents were selected
           if (validContinents && validContinents.length > 0) {
             const allowedContinents = new Set(validContinents);
             suppliers = suppliers.filter(s => {
@@ -914,19 +790,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       console.warn('Could not apply filters:', e.message);
     }
 
-    // If Perplexity supplied citations and a supplier's source field is empty/generic,
-    // attach the most relevant citation URL so the user can verify.
-    if (perplexityCitations.length && Array.isArray(suppliers)) {
-      suppliers.forEach(s => {
-        if (!s.source || /^(web search|direct|search results?|n\/?a|unknown)$/i.test(s.source)) {
-          s.source = 'Perplexity (multi-source)';
-        }
-      });
-      // Replace responseText so frontend gets the enriched data
-      responseText = JSON.stringify(suppliers);
-    }
-
-    const usedLiveSearch = usedProvider === 'perplexity' || usedProvider === 'gemini';
+    const usedLiveSearch = usedProvider === 'gemini';
 
     res.json({
       claudeData: {
@@ -934,9 +798,7 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       },
       usedSerpApi: usedLiveSearch,
       usedGemini: usedProvider === 'gemini',
-      usedPerplexity: usedProvider === 'perplexity',
-      usedProvider,
-      perplexityCitations: perplexityCitations.slice(0, 30) // cap so we don't bloat payload
+      usedProvider
     });
 
   } catch (err) {
@@ -959,12 +821,9 @@ app.post('/api/email', async (req, res) => {
     const attachNote = includeAttach && attachList
       ? ` Reference that attachments are included: ${attachList}.` : '';
 
-    // Format the due date as e.g. "May 19, 2026" if provided. Validate the format
-    // server-side so bad input doesn't get injected into the prompt.
     let dueDateNote = '';
     let formattedDueDate = '';
     if (dueDate && /^\d{4}-\d{2}-\d{2}$/.test(dueDate)) {
-      // Parse without timezone shifts (interpret YYYY-MM-DD literally)
       const [y, m, d] = dueDate.split('-').map(Number);
       const dt = new Date(Date.UTC(y, m - 1, d));
       formattedDueDate = dt.toLocaleDateString('en-US', {
@@ -973,9 +832,6 @@ app.post('/api/email', async (req, res) => {
       dueDateNote = ` Include a short pricing-by line near the end of the email (its own line or short closing paragraph, not buried inside another paragraph) using this exact date: "${formattedDueDate}".`;
     }
 
-    // Optional sourcing context (product links, part numbers, target volumes, etc.)
-    // Sanitize: cap length and strip any prompt-injection-style markers, but
-    // preserve URLs and line breaks so the model can reference them faithfully.
     let contextBlock = '';
     if (typeof emailContext === 'string' && emailContext.trim()) {
       const cleaned = emailContext.trim().slice(0, 2000);
@@ -1038,12 +894,10 @@ Return ONLY a valid JSON object. No markdown. No preamble.`;
 
 // ── Start ──────────────────────────────────────────────────────────────────
 app.listen(PORT, () => {
-  const hasGemini     = !!process.env.GEMINI_API_KEY;
-  const hasAnthropic  = !!process.env.ANTHROPIC_API_KEY;
-  const hasPerplexity = !!process.env.PERPLEXITY_API_KEY;
+  const hasGemini    = !!process.env.GEMINI_API_KEY;
+  const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
   console.log(`SupplierScout running on port ${PORT}`);
-  console.log(`Gemini:     ${hasGemini     ? '✓ configured (primary)'  : '✗ not set'}`);
-  console.log(`Perplexity: ${hasPerplexity ? '✓ configured (fallback)' : '✗ not set'}`);
-  console.log(`Claude:     ${hasAnthropic  ? '✓ configured (fallback)' : '✗ not set'}`);
+  console.log(`Gemini: ${hasGemini    ? '✓ configured (primary)'  : '✗ not set'}`);
+  console.log(`Claude: ${hasAnthropic ? '✓ configured (fallback)' : '✗ not set'}`);
   if (!hasGemini) console.log('⚠ Add GEMINI_API_KEY to Railway for live search grounding');
 });
