@@ -38,7 +38,6 @@ textarea, input[type="text"], input[type="date"] { width:100%; background:var(--
 textarea:focus, input:focus { border-color:var(--accent); }
 textarea::placeholder, input::placeholder { color:var(--text3); }
 
-/* Date input: monospace value, custom-tinted picker icon, no native fluff */
 input[type="date"] { font-family:'IBM Plex Mono',monospace; font-size:13px; letter-spacing:0.02em; color-scheme:dark; cursor:pointer; }
 input[type="date"]::-webkit-calendar-picker-indicator { filter:invert(0.6) sepia(1) saturate(5) hue-rotate(5deg); cursor:pointer; opacity:0.7; transition:opacity 0.2s; }
 input[type="date"]::-webkit-calendar-picker-indicator:hover { opacity:1; }
@@ -125,6 +124,27 @@ input[type="date"]:focus { border-color:var(--accent); }
 .card-url:hover { text-decoration:underline; }
 .fit-badge { font-family:'IBM Plex Mono',monospace; font-size:11px; padding:3px 9px; border:1px solid; white-space:nowrap; }
 
+/* ── Batch divider (between original results and each Refine / More Sources append) ── */
+.batch-divider { display:flex; align-items:center; gap:12px; margin:22px 0 12px; }
+.batch-divider::before, .batch-divider::after {
+  content:''; flex:1; height:1px;
+  background:linear-gradient(to right, transparent, rgba(232,160,32,0.4), transparent);
+}
+.batch-divider .divider-meta {
+  font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:1.4px;
+  text-transform:uppercase; color:var(--accent);
+  background:rgba(232,160,32,0.07); border:1px solid rgba(232,160,32,0.28);
+  padding:5px 14px; max-width:78%;
+  display:inline-flex; align-items:center; gap:8px;
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.batch-divider .divider-type { font-weight:500; }
+.batch-divider .divider-sep { color:var(--text3); }
+.batch-divider .divider-detail { color:var(--text2); text-transform:none; letter-spacing:0.04em; }
+@media (max-width:520px){
+  .batch-divider .divider-meta { font-size:9px; max-width:90%; padding:4px 10px; }
+}
+
 .btn-sm { padding:7px 14px; font-family:'IBM Plex Mono',monospace; font-size:12px; cursor:pointer; border:1px solid var(--border2); background:var(--surface); color:var(--text2); transition:all 0.2s; }
 .btn-sm:hover { border-color:var(--accent); color:var(--accent); }
 .btn-sm.primary { border-color:var(--accent); color:var(--accent); background:rgba(232,160,32,0.08); }
@@ -156,7 +176,6 @@ input[type="date"]:focus { border-color:var(--accent); }
 .modal-section-label:first-of-type { border-top:none; padding-top:0; margin-top:0; }
 .modal-actions { display:flex; gap:10px; margin-top:22px; padding-top:18px; border-top:1px solid var(--border); position:sticky; bottom:-28px; background:var(--surface); margin-left:-28px; margin-right:-28px; padding-left:28px; padding-right:28px; padding-bottom:0; }
 
-/* Custom scrollbar inside modal so it feels intentional, not native-Mac-ugly */
 .modal::-webkit-scrollbar { width:8px; }
 .modal::-webkit-scrollbar-track { background:var(--surface2); }
 .modal::-webkit-scrollbar-thumb { background:var(--border2); border-radius:4px; }
@@ -175,7 +194,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.3</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.4</div>
   </header>
 
   <div id="inputPanel">
@@ -457,10 +476,9 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div id="supplierGrid"></div>
       <!--
         Footer slot: gets populated by JS with one of three states:
-          1) Search More Sources button (default + after fresh results)
-          2) Inline loading panel (while searching for more)
-          3) Zero-results message with optional retry button
-        See renderSearchMoreButton / renderInlineLoadingPanel / renderZeroResultsMessage.
+          1) Action buttons (Refine + Search More Sources) — default + after fresh results
+          2) Inline loading panel — while searching for more / running refined search
+          3) Zero-results message with retry — when an append returned no new suppliers
       -->
       <div id="suppliersFooter" style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px;"></div>
     </div>
@@ -477,25 +495,15 @@ input[type="date"]:focus { border-color:var(--accent); }
 </div>
 
 <!-- ─── Refine Search Modal ─────────────────────────────────────────────── -->
-<!--
-  Modal mirrors the main form's geography/filter controls so users can change
-  scope, countries, supplier type, etc. without starting over. Pre-populated
-  from current state on open; writes back to globals on submit. Pills/checks
-  inside the modal use the same classes as the main form so existing CSS
-  carries over — but we wire up our own listeners with a `data-refine` flag
-  so we don't accidentally hit the main form's handlers.
--->
 <div class="modal-overlay" id="refineModal">
   <div class="modal">
     <div class="modal-title">&#9998; Refine Search</div>
 
-    <!-- Sourcing description / target company -->
     <div class="modal-section-label" id="refineDescriptionLabel">Sourcing description</div>
     <div class="input-block" id="refineCommodityBlock">
       <textarea id="refineCommodity" rows="3" placeholder="Refine or update your sourcing description..."></textarea>
     </div>
 
-    <!-- ── Geography (Commodity mode) ─────────────────────────────────── -->
     <div id="refineCommodityGeo">
       <div class="modal-section-label">&#127760; Source Countries</div>
       <div style="display:flex;gap:6px;margin-bottom:8px;">
@@ -546,7 +554,6 @@ input[type="date"]:focus { border-color:var(--accent); }
       </div>
     </div>
 
-    <!-- ── Geography (Company mode) ───────────────────────────────────── -->
     <div id="refineCompanyGeo" style="display:none;">
       <div class="modal-section-label">&#127760; Geography</div>
       <div class="pill-group" id="refineCompanyGeoPills">
@@ -572,7 +579,6 @@ input[type="date"]:focus { border-color:var(--accent); }
       </div>
     </div>
 
-    <!-- ── Supplier type ──────────────────────────────────────────────── -->
     <div class="modal-section-label">Supplier Type</div>
     <div class="pill-group" id="refineSupplierTypePills">
       <div class="pill" data-val="manufacturers">Manufacturers Only</div>
@@ -580,7 +586,6 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="pill selected" data-val="both">Both</div>
     </div>
 
-    <!-- ── Certifications & HTS ───────────────────────────────────────── -->
     <div class="modal-section-label">Filters</div>
     <div class="input-block">
       <label>Certifications <span style="color:var(--text3)">(comma separated)</span></label>
@@ -670,10 +675,6 @@ document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.ad
   }
 }));
 
-// Frontend mirror of the server-side CONTINENT_COUNTRIES map. When a continent
-// pill is selected, every country on that continent is added to the search
-// payload — not just the ones we have pills for. Names are proper-cased so they
-// flow cleanly into prompts and the server's location-substring filter.
 const COMMODITY_CONTINENT_COUNTRIES = {
   north_america: ['USA','Canada','Mexico','Guatemala','Honduras','El Salvador','Nicaragua','Costa Rica','Panama','Belize','Cuba','Haiti','Dominican Republic','Jamaica','Trinidad and Tobago','Bahamas','Barbados','Puerto Rico'],
   south_america: ['Brazil','Argentina','Chile','Peru','Colombia','Venezuela','Ecuador','Bolivia','Paraguay','Uruguay','Guyana','Suriname','French Guiana'],
@@ -686,8 +687,6 @@ const COMMODITY_CONTINENT_COUNTRIES = {
 
 let currentCommodityContinents = new Set();
 
-// Continent pills (commodity mode) — toggle independently from country pills.
-// A selected continent expands into its full country roster at search time.
 document.querySelectorAll('#commodityContinentPills .pill').forEach(p=>p.addEventListener('click',()=>{
   const continent=p.dataset.val;
   if(currentCommodityContinents.has(continent)){
@@ -700,7 +699,7 @@ document.querySelectorAll('#commodityContinentPills .pill').forEach(p=>p.addEven
 }));
 
 function getSelectedCountries(){
-  const seen=new Set(); // lowercase keys for dedupe
+  const seen=new Set();
   const selected=[];
   const add=(name)=>{
     if(!name) return;
@@ -709,16 +708,13 @@ function getSelectedCountries(){
     seen.add(key);
     selected.push(name);
   };
-  // 1. Individually selected country pills
   document.querySelectorAll('#countryCheckboxes .country-check.selected').forEach(el=>{
     if(el.id==='otherCountryCheck') return;
     add(el.dataset.val);
   });
-  // 2. Full roster for each selected continent (independent of pills)
   currentCommodityContinents.forEach(cont=>{
     (COMMODITY_CONTINENT_COUNTRIES[cont]||[]).forEach(add);
   });
-  // 3. Free-text "other" countries
   const otherCheck=document.getElementById('otherCountryCheck');
   if(otherCheck&&otherCheck.classList.contains('selected')){
     const otherVal=document.getElementById('countryInput').value.trim();
@@ -748,7 +744,6 @@ function clearAllCountries(){
   document.querySelectorAll('#countryCheckboxes .country-check').forEach(el=>el.classList.remove('selected'));
   document.getElementById('otherCountryInput').style.display='none';
   document.getElementById('allCountriesBtn').classList.remove('selected');
-  // Also clear continent selections, since "Clear All" should mean clear all.
   currentCommodityContinents.clear();
   document.querySelectorAll('#commodityContinentPills .pill').forEach(p=>p.classList.remove('selected'));
 }
@@ -805,7 +800,6 @@ function toggleOpt(type){
     el.classList.toggle('on',useDateRange);
     el.querySelector('.toggle-check').innerHTML=useDateRange?'&#10003;':'';
     document.getElementById('dateRangeOptions').style.display=useDateRange?'block':'none';
-    // Seed default dates the first time the toggle is turned on (last 2 years)
     if(useDateRange){
       const fromEl=document.getElementById('dateFromInput');
       const toEl=document.getElementById('dateToInput');
@@ -892,27 +886,66 @@ function setProgress(pct,label){
   document.getElementById('progressLabel').textContent=label;
 }
 
+// ─── Batch divider helpers ────────────────────────────────────────────────
+// A divider gets inserted at the top of each appended batch (Refine Search or
+// Search More Sources) so the user can clearly see where each round of
+// suppliers came from. The summary string is a compact description of the
+// active criteria for refines, or just a "broader search" label for More.
+
+function buildBatchSummary(batchType){
+  if(batchType==='more') return 'broader source search';
+  const parts=[];
+  const desc = currentMode==='company' ? currentCompanyName : currentCommodity;
+  if(desc && desc!=='[see attached image]'){
+    parts.push(desc.length>40 ? desc.substring(0,40)+'…' : desc);
+  }
+  if(currentMode==='company'){
+    if(currentCompanyGeoScope==='domestic') parts.push('domestic');
+    else if(currentCompanyGeoScope==='foreign') parts.push('foreign');
+  } else if(currentCountries && currentCountries.length){
+    if(currentCountries.length<=3) parts.push(currentCountries.join(', '));
+    else parts.push(currentCountries.slice(0,2).join(', ')+' +'+(currentCountries.length-2));
+  }
+  if(currentSupplierType==='manufacturers') parts.push('mfrs only');
+  else if(currentSupplierType==='distributors') parts.push('dists only');
+  if(currentCerts){
+    const c=currentCerts.length>24 ? currentCerts.substring(0,24)+'…' : currentCerts;
+    parts.push(c);
+  }
+  if(currentHts) parts.push('HTS '+currentHts);
+  return parts.join(' · ');
+}
+
+function buildBatchDivider(batchType, summary){
+  const d=document.createElement('div');
+  d.className='batch-divider fade-in';
+  const label = batchType==='refined' ? 'Refined' : 'More Sources';
+  const time = new Date().toLocaleTimeString([], {hour:'numeric', minute:'2-digit'});
+  const detail = summary ? '<span class="divider-sep">·</span><span class="divider-detail">'+summary+'</span>' : '';
+  d.innerHTML =
+    '<div class="divider-meta">'
+    +'<span class="divider-type">'+label+'</span>'
+    +'<span class="divider-sep">·</span>'
+    +time
+    +detail
+    +'</div>';
+  return d;
+}
+
 // ─── Footer slot renderers ────────────────────────────────────────────────
 // The suppliers tab footer is a single container (#suppliersFooter) that
-// swaps between three states as the user interacts with "Search More Sources":
-//   1) Button         — default, after a fresh result, and after errors
-//   2) Inline loading — while a follow-up search is in flight
-//   3) Zero-results   — when a follow-up search returned no new suppliers
-//
-// Each renderer fully replaces the footer's innerHTML so we don't have to
-// micromanage element visibility.
+// swaps between three states. Every renderer fully replaces innerHTML so we
+// don't have to micromanage element visibility.
 
-function renderSearchMoreButton(){
+function renderActionButtons(){
   document.getElementById('suppliersFooter').innerHTML =
-    '<div style="display:flex;align-items:center;justify-content:center;">'
+    '<div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">'
+    +'<button class="btn-sm refine" onclick="openRefineModal()">&#9998; Refine Search</button>'
     +'<button class="btn-sm primary" onclick="searchMoreSources()">&#8853; Search More Sources</button>'
     +'</div>';
 }
 
 function renderInlineLoadingPanel(){
-  // Mounts a copy of the loading panel inline in the suppliers tab footer.
-  // Uses distinct IDs (inlineProgressFill / inlineProgressLabel / inlineLoaderSteps)
-  // so it doesn't collide with the top-of-page loading panel used on the first search.
   document.getElementById('suppliersFooter').innerHTML =
     '<div class="loading-panel active" id="inlineLoadingPanel" style="display:block;">'
     +'<div class="loader-title">Searching supplier networks...</div>'
@@ -920,7 +953,6 @@ function renderInlineLoadingPanel(){
     +'<div class="progress-label" id="inlineProgressLabel">0%</div>'
     +'<div class="loader-steps" id="inlineLoaderSteps"></div>'
     +'</div>';
-  // Gentle scroll so the panel is visible if it ended up just below the fold.
   setTimeout(()=>{
     const panel=document.getElementById('inlineLoadingPanel');
     if(panel) panel.scrollIntoView({behavior:'smooth',block:'nearest'});
@@ -935,20 +967,23 @@ function setInlineProgress(pct,label){
 }
 
 function renderZeroResultsMessage(canRetry){
-  // canRetry=true after the FIRST zero-result follow-up — offer one more try.
-  // canRetry=false after a second consecutive zero — stop offering retries
-  // (user can still use "New Search" or "Refine Search" from the toolbar).
+  // canRetry=true → first zero in a row; offer "Try One More Search" alongside Refine.
+  // canRetry=false → second consecutive zero; only show Refine + the dead-end note.
   let html =
     '<div style="background:var(--surface);border:1px solid var(--border2);padding:18px 22px;text-align:center;margin-bottom:14px;">'
     +'<div style="font-family:Syne,sans-serif;font-weight:700;font-size:14px;color:var(--text);margin-bottom:6px;">No new suppliers found</div>'
     +'<div style="font-family:IBM Plex Mono,monospace;font-size:12px;color:var(--text3);line-height:1.7;">The existing results may already cover the most relevant sources for this search.</div>'
     +'</div>';
   if(canRetry){
-    html += '<div style="display:flex;align-items:center;justify-content:center;">'
+    html += '<div style="display:flex;align-items:center;justify-content:center;gap:10px;flex-wrap:wrap;">'
+      +'<button class="btn-sm refine" onclick="openRefineModal()">&#9998; Refine Search</button>'
       +'<button class="btn-sm primary" onclick="searchMoreSources()">&#8853; Try One More Search</button>'
       +'</div>';
   } else {
-    html += '<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);text-align:center;letter-spacing:0.05em;">// NO MORE NEW SUPPLIERS AVAILABLE — TRY "REFINE SEARCH" OR "NEW SEARCH" //</div>';
+    html += '<div style="display:flex;align-items:center;justify-content:center;gap:10px;margin-bottom:14px;">'
+      +'<button class="btn-sm refine" onclick="openRefineModal()">&#9998; Refine Search</button>'
+      +'</div>'
+      +'<div style="font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);text-align:center;letter-spacing:0.05em;">// NO MORE NEW SUPPLIERS AVAILABLE — TRY "REFINE SEARCH" OR "NEW SEARCH" //</div>';
   }
   document.getElementById('suppliersFooter').innerHTML = html;
 }
@@ -962,7 +997,7 @@ async function runSearch(){
   if(currentMode==='company'){
     if(!companyName){showError('Please enter a target company name.');return;}
     currentCompanyName=companyName;
-    currentCommodity=companyName; // used as display title
+    currentCommodity=companyName;
     currentCompanyGeoCountries=document.getElementById('companyCountriesInput').value.trim();
     if(useDateRange){
       currentDateFrom=document.getElementById('dateFromInput').value || '';
@@ -987,16 +1022,19 @@ async function runSearch(){
   currentSupplierType=supplierType;
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
-  consecutiveZeroResults = 0; // fresh search — reset the zero-results counter
+  consecutiveZeroResults = 0;
   const scope=getScopeFromCountries(currentCountries);
-  await _executeSearch(currentCommodity, scope, certs, currentCountries.filter(c=>c!=='USA').join(', '), hts, true);
+  await _executeSearch(currentCommodity, scope, certs, currentCountries.filter(c=>c!=='USA').join(', '), hts, true, null);
 }
 
-async function _executeSearch(commodity, searchScope, certs, countries, hts, isFirst){
-  // First-run searches use the big top-of-page loading panel (after the input
-  // panel is hidden). Follow-up "Search More Sources" calls render an inline
-  // loading panel into the suppliers tab footer instead, so the user stays
-  // anchored to the bottom of the existing supplier list.
+// Single search executor used by:
+//   - runSearch (isFirst=true, batchType=null)         → fresh search, big loading panel
+//   - searchMoreSources (isFirst=false, 'more')        → append, inline loading + divider
+//   - runRefinedSearch (isFirst=false, 'refined')      → append, inline loading + divider
+//
+// When !isFirst, new (deduped) suppliers get a divider inserted above them so
+// the user can see where each batch landed.
+async function _executeSearch(commodity, searchScope, certs, countries, hts, isFirst, batchType){
   if(isFirst){
     document.getElementById('loadingPanel').classList.add('active');
     setProgress(0,'Starting...');
@@ -1005,7 +1043,6 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     setInlineProgress(0,'Starting...');
   }
 
-  // Email campaign is never used in company mode
   const wantEmails = includeEmails && currentMode !== 'company';
 
   const attachList=includeAttach?document.getElementById('attachInput').value.trim():'';
@@ -1035,12 +1072,11 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
   },950);
 
   try{
-    // Supplier search
     const newSuppliers = await callSearch(commodity, searchScope, certs, countries, hts,
       (pastedImageData&&isFirst)?pastedImageData:null,
       (pastedImageType&&isFirst)?pastedImageType:null);
 
-    let freshSuppliers = []; // only the newly-added (dedup'd) suppliers
+    let freshSuppliers = [];
     if(isFirst){
       suppliers=newSuppliers;
       consecutiveZeroResults = 0;
@@ -1071,13 +1107,12 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       } else {
         document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
         if(freshSuppliers.length > 0){
-          // Append-only render so existing cards don't re-animate.
-          appendSupplierCards(freshSuppliers);
-          renderSearchMoreButton();
-          showToast(freshSuppliers.length+' new supplier'+(freshSuppliers.length===1?'':'s')+' added!');
+          appendSupplierCards(freshSuppliers, batchType);
+          renderActionButtons();
+          const label = batchType==='refined' ? 'refined' : 'new';
+          showToast(freshSuppliers.length+' '+label+' supplier'+(freshSuppliers.length===1?'':'s')+' added!');
         } else {
-          // Show the message + maybe a retry button. Retry only allowed once
-          // per consecutive zero-result streak (consecutiveZeroResults===1).
+          // Refine can hit zero too — counts toward the same retry budget as More Sources.
           const canRetry = consecutiveZeroResults < 2;
           renderZeroResultsMessage(canRetry);
         }
@@ -1090,9 +1125,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       document.getElementById('inputPanel').style.display='block';
       showError('Search failed: '+err.message);
     } else {
-      // Restore the button so the user can retry; surface the error as a toast
-      // since the inputPanel-bound error panel isn't visible from results view.
-      renderSearchMoreButton();
+      renderActionButtons();
       showToast('Search failed: '+err.message);
     }
   }
@@ -1100,16 +1133,11 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
 
 async function searchMoreSources(){
   const scope=getScopeFromCountries(currentCountries);
-  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false);
+  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false, 'more');
 }
 
 // ─── Refine Modal ─────────────────────────────────────────────────────────
-//
-// Wire up modal-internal pills/checks once on load. We use querySelectorAll
-// scoped to refine-specific IDs so these listeners never fire for the main
-// form, and vice versa.
 
-// Refine: commodity-mode continents (independent multi-select, expand to full roster)
 let refineCommodityContinents = new Set();
 document.querySelectorAll('#refineContinentPills .pill').forEach(p=>p.addEventListener('click',()=>{
   const continent=p.dataset.val;
@@ -1122,7 +1150,6 @@ document.querySelectorAll('#refineContinentPills .pill').forEach(p=>p.addEventLi
   }
 }));
 
-// Refine: commodity-mode country checks
 document.querySelectorAll('#refineCountryCheckboxes .country-check').forEach(el=>el.addEventListener('click',()=>{
   if(el.id==='refineOtherCountryCheck'){
     el.classList.toggle('selected');
@@ -1132,18 +1159,15 @@ document.querySelectorAll('#refineCountryCheckboxes .country-check').forEach(el=
   }
 }));
 
-// Refine: company-mode geo scope (single-select)
 document.querySelectorAll('#refineCompanyGeoPills .pill').forEach(p=>p.addEventListener('click',()=>{
   document.querySelectorAll('#refineCompanyGeoPills .pill').forEach(x=>x.classList.remove('selected'));
   p.classList.add('selected');
 }));
 
-// Refine: company-mode continents (multi-select, used as continent filter on server)
 document.querySelectorAll('#refineCompanyContinentPills .pill').forEach(p=>p.addEventListener('click',()=>{
   p.classList.toggle('selected');
 }));
 
-// Refine: supplier type pills (single-select)
 document.querySelectorAll('#refineSupplierTypePills .pill').forEach(p=>p.addEventListener('click',()=>{
   document.querySelectorAll('#refineSupplierTypePills .pill').forEach(x=>x.classList.remove('selected'));
   p.classList.add('selected');
@@ -1164,7 +1188,6 @@ function refineClearAllCountries(){
 }
 
 function openRefineModal(){
-  // Pre-populate description / company name
   const descLabel=document.getElementById('refineDescriptionLabel');
   if(currentMode==='company'){
     descLabel.textContent='Target Company';
@@ -1176,13 +1199,11 @@ function openRefineModal(){
     document.getElementById('refineCommodity').value=currentCommodity!=='[see attached image]'?currentCommodity:'';
   }
 
-  // Show only the relevant geography section
   const isCompany = currentMode==='company';
   document.getElementById('refineCommodityGeo').style.display = isCompany ? 'none' : '';
   document.getElementById('refineCompanyGeo').style.display   = isCompany ? '' : 'none';
 
   if(isCompany){
-    // Company-mode geo: scope, continents, free-text countries
     document.querySelectorAll('#refineCompanyGeoPills .pill').forEach(p=>{
       p.classList.toggle('selected', p.dataset.val===currentCompanyGeoScope);
     });
@@ -1191,17 +1212,13 @@ function openRefineModal(){
     });
     document.getElementById('refineCompanyCountriesInput').value=currentCompanyGeoCountries||'';
   } else {
-    // Commodity-mode geo: country checks + continent pills
-    // Build a Set of canonical country names for fast lookup
     const knownCountryEls=document.querySelectorAll('#refineCountryCheckboxes .country-check');
     const knownNames=new Set();
     knownCountryEls.forEach(el=>{ if(el.id!=='refineOtherCountryCheck') knownNames.add(el.dataset.val); });
 
-    // Reset all checks
     knownCountryEls.forEach(el=>el.classList.remove('selected'));
     document.getElementById('refineOtherCountryInput').style.display='none';
 
-    // Re-check anything currently in currentCountries that has a pill
     const otherCountries=[];
     (currentCountries||[]).forEach(c=>{
       if(knownNames.has(c)){
@@ -1219,19 +1236,14 @@ function openRefineModal(){
       document.getElementById('refineCountryInput').value='';
     }
 
-    // Continent pills are NOT auto-selected from currentCountries — they're an
-    // expand-on-submit shortcut. We just make sure they reflect refineCommodityContinents
-    // (which we reset on each open).
     refineCommodityContinents.clear();
     document.querySelectorAll('#refineContinentPills .pill').forEach(p=>p.classList.remove('selected'));
   }
 
-  // Supplier type
   document.querySelectorAll('#refineSupplierTypePills .pill').forEach(p=>{
     p.classList.toggle('selected', p.dataset.val===currentSupplierType);
   });
 
-  // Certs & HTS
   document.getElementById('refineCerts').value=currentCerts||'';
   document.getElementById('refineHts').value=currentHts||'';
 
@@ -1240,7 +1252,6 @@ function openRefineModal(){
 
 function closeRefineModal(){ document.getElementById('refineModal').classList.remove('active'); }
 
-// Build the refined country list using the same expand-on-submit logic as the main form
 function getRefineSelectedCountries(){
   const seen=new Set();
   const selected=[];
@@ -1274,26 +1285,21 @@ async function runRefinedSearch(){
 
   if(currentMode==='company'){
     currentCompanyName=newCommodity;
-    currentCommodity=newCommodity; // used for display
+    currentCommodity=newCommodity;
 
-    // Company-mode geo: scope + continents + free-text countries
     const scopeEl=document.querySelector('#refineCompanyGeoPills .pill.selected');
     if(scopeEl) currentCompanyGeoScope=scopeEl.dataset.val;
     currentContinents=[...document.querySelectorAll('#refineCompanyContinentPills .pill.selected')].map(el=>el.dataset.val);
     currentCompanyGeoCountries=document.getElementById('refineCompanyCountriesInput').value.trim();
   } else {
     currentCommodity=newCommodity;
-
-    // Commodity-mode geo: rebuild currentCountries from modal selections
     currentCountries=getRefineSelectedCountries();
   }
 
-  // Supplier type
   const stEl=document.querySelector('#refineSupplierTypePills .pill.selected');
   if(stEl){
     currentSupplierType=stEl.dataset.val;
-    supplierType=stEl.dataset.val; // keep main-form variable in sync for any subsequent toggles
-    // Reflect in the main form pills so reopening matches
+    supplierType=stEl.dataset.val;
     document.querySelectorAll('#supplierTypePills .pill').forEach(p=>{
       p.classList.toggle('selected', p.dataset.val===currentSupplierType);
     });
@@ -1302,8 +1308,6 @@ async function runRefinedSearch(){
   currentCerts=newCerts;
   currentHts=newHts;
 
-  // Mirror commodity-mode country selections back into the main form so the
-  // user sees the new state if they hit "New Search" later.
   if(currentMode!=='company'){
     const knownCountryEls=document.querySelectorAll('#countryCheckboxes .country-check');
     knownCountryEls.forEach(el=>{
@@ -1313,11 +1317,11 @@ async function runRefinedSearch(){
   }
 
   closeRefineModal();
-  suppliers=[]; emails=[];
-  consecutiveZeroResults = 0; // refined search counts as a fresh search
-  document.getElementById('resultsPanel').classList.remove('active');
+  consecutiveZeroResults = 0; // refine is a fresh attempt — reset the streak
+  // Refine APPENDS to the existing supplier list with a divider marking the
+  // new batch and its criteria. For a clean slate, hit "New Search" instead.
   const scope=getScopeFromCountries(currentCountries);
-  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, true);
+  await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false, 'refined');
 }
 
 function setFitFilter(val,el){
@@ -1353,9 +1357,7 @@ function renderResults(commodity){
   document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
   document.getElementById('emailTab').style.display=emails.length?'block':'none';
   renderSupplierCards();
-  // Footer starts in the "default button" state. searchMoreSources() will
-  // swap it for the inline loading panel and back, depending on outcome.
-  renderSearchMoreButton();
+  renderActionButtons();
   renderEmailCards();
 }
 
@@ -1382,10 +1384,6 @@ function getSourceSearchUrl(source){
   return 'https://www.google.com/search?q='+encodeURIComponent(query)+'+manufacturer+supplier';
 }
 
-// Builds a single supplier card DOM node. Factored out of renderSupplierCards
-// so we can also append individual cards on "Search More Sources" without
-// clearing & rebuilding the entire grid (which would re-trigger the fade-in
-// animation on every existing card).
 function buildSupplierCard(s){
   const fitColor=f=>f==='high'?'#2ecc71':f==='medium'?'#e8a020':'#7a8499';
   const fitLabel=f=>f==='high'?'HIGH FIT':f==='medium'?'MED FIT':'LOW FIT';
@@ -1440,7 +1438,7 @@ function renderSupplierCards(){
       +'&bull; The product may be licensed IP with no open manufacturing<br>'
       +'&bull; The search terms may be too specific — try simplifying<br>'
       +'&bull; The scope may not match where this product is made<br>'
-      +'&bull; Try clicking <strong style="color:var(--accent);">Search More Sources</strong> below'
+      +'&bull; Try clicking <strong style="color:var(--accent);">Search More Sources</strong> or <strong style="color:var(--blue);">Refine Search</strong> below'
       +'</div></div>';
     return;
   }
@@ -1449,18 +1447,22 @@ function renderSupplierCards(){
   applyFitFilter();
 }
 
-// Appends only the given new suppliers to the existing grid. Used by
-// "Search More Sources" so we get continued numbering, no scroll jumps,
-// and fade-in animation only on the new cards.
-function appendSupplierCards(newSuppliers){
+// Append a new batch of suppliers below the existing list, prefixed by a
+// labeled divider so the user can see where each Refine/More Sources call
+// landed. The divider scrolls into view so they don't have to hunt for it.
+function appendSupplierCards(newSuppliers, batchType){
   const grid=document.getElementById('supplierGrid');
-  // If the grid currently shows the "no suppliers found" empty state, clear it
-  // before appending — otherwise the new cards would render below that message.
+  // If we're appending into an empty-state placeholder, clear it first.
   if(grid.querySelector('.supplier-card')===null){
     grid.innerHTML='';
   }
+  const divider = buildBatchDivider(batchType, buildBatchSummary(batchType));
+  grid.appendChild(divider);
   newSuppliers.forEach(s=>grid.appendChild(buildSupplierCard(s)));
   applyFitFilter();
+  setTimeout(()=>{
+    divider.scrollIntoView({behavior:'smooth', block:'start'});
+  }, 120);
 }
 
 function renderEmailCards(){
@@ -1596,7 +1598,6 @@ function reset(){
   fitFilter='all'; supplierType='both'; currentSupplierType='both';
   document.querySelectorAll('#supplierTypePills .pill').forEach(p=>p.classList.remove('selected'));
   document.querySelector('#supplierTypePills .pill[data-val="both"]').classList.add('selected');
-  // Reset mode pills back to commodity
   currentMode='commodity'; currentCompanyName='';
   currentCompanyGeoScope='both'; currentCompanyGeoCountries='';
   currentContinents=[];
@@ -1611,7 +1612,6 @@ function reset(){
   }
   const dateOpts=document.getElementById('dateRangeOptions');
   if(dateOpts) dateOpts.style.display='none';
-  // Reset attach + due-date toggles
   includeAttach=false; includeDueDate=false;
   ['attachToggle','dueDateToggle'].forEach(id=>{
     const t=document.getElementById(id);
@@ -1642,7 +1642,6 @@ function reset(){
   suppliers=[]; emails=[];
   document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
   document.querySelector('.fit-filter[data-fit="all"]').classList.add('active');
-  // Clear the footer slot too — it'll be re-rendered on the next successful search.
   const footer=document.getElementById('suppliersFooter');
   if(footer) footer.innerHTML='';
   switchTab('suppliers',document.querySelector('.tab'));
