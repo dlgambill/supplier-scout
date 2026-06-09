@@ -1,7 +1,14 @@
+// SupplierScout — server.js — v1.5.5
+// Changelog v1.5.5:
+//   - Removed dead gemini-1.5-flash (Google retired all 1.5 models; returns HTTP 404).
+//   - New Gemini cascade: 2.5-pro -> 2.5-flash -> 2.5-flash-lite -> 3.5-flash -> Claude Haiku.
+//   - Added geminiFetch() retry-with-backoff on transient 429/500/503 ("high demand") errors.
+//   - Refactored /api/search provider section into a single loop over GEMINI_MODELS.
 const express = require('express');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
+const APP_VERSION = 'v1.5.5';
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -299,11 +306,42 @@ function isSelfOrSubsidiary(name, targetCompany) {
 }
 
 
-// ── Gemini call with model cascade ────────────────────────────────────────
-// Quality-first cascade: Pro → 2.5 Flash → 1.5 Flash. Used by /api/email
-// where a simple top-down try works. /api/search calls each model individually
-// so it can fall through to Claude in the right order.
-const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-flash'];
+// ── Gemini model cascade ───────────────────────────────────────────────────
+// Quality-first, all live models (as of 2026):
+//   gemini-2.5-pro       — empirically strongest for our prompt structure (primary)
+//   gemini-2.5-flash     — same family, smaller/faster
+//   gemini-2.5-flash-lite— cheapest live tier; different pool, often up when 2.5 is throttled
+//   gemini-3.5-flash     — newest GA flash, no announced shutdown (future-proof tail)
+// gemini-1.5-flash was REMOVED — Google retired all 1.5 models and the endpoint now 404s.
+// Used in-order by /api/search (per-model fall-through to Claude) and by callGemini (/api/email).
+const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash'];
+
+// HTTP wrapper that retries transient Gemini failures (429 rate-limit, 500, 503 "high demand").
+// These are server-side capacity spikes that usually clear within a second or two, so a couple
+// of short backoff retries on the SAME model avoids cascading straight to Claude unnecessarily.
+async function geminiFetch(url, body, model, label = 'request') {
+  const RETRYABLE = new Set([429, 500, 503]);
+  const MAX_RETRIES = 2; // 3 total attempts
+  let lastErr;
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      const delay = 700 * Math.pow(2, attempt - 1); // 700ms, then 1400ms
+      console.log(`  [${model}] retrying ${label} (attempt ${attempt}/${MAX_RETRIES}) after ${delay}ms`);
+      await new Promise(r => setTimeout(r, delay));
+    }
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    if (res.ok) return res;
+    const errText = await res.text();
+    console.error(`  [${model}] HTTP ${res.status} (${label}): ${errText.substring(0, 400)}`);
+    lastErr = new Error(`Gemini API error ${res.status}: ${errText.substring(0, 200)}`);
+    if (!(RETRYABLE.has(res.status) && attempt < MAX_RETRIES)) throw lastErr;
+  }
+  throw lastErr || new Error(`${model} failed after retries`);
+}
 
 async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
   for (const model of GEMINI_MODELS) {
@@ -319,25 +357,15 @@ async function callGemini(prompt, geminiKey, scope='', countries='', systemInstr
 }
 
 async function callGeminiModel(prompt, geminiKey, model, scope='', countries='', systemInstruction='') {
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction || 'You are a Lead Sourcing & Procurement Analyst. Return a valid JSON array of suppliers only. No preamble. No markdown.' }] },
-        contents: [{ parts: [{ text: prompt }] }],
-        tools: [{ googleSearch: {} }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
-      })
-    }
-  );
-  if (!res.ok) {
-    const err = await res.text();
-    // Surface the real status & body so we can see rate limits / bad keys in the logs
-    console.error(`  [${model}] HTTP ${res.status}: ${err.substring(0, 400)}`);
-    throw new Error(`Gemini API error ${res.status}: ${err.substring(0, 200)}`);
-  }
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+
+  const res = await geminiFetch(url, {
+    system_instruction: { parts: [{ text: systemInstruction || 'You are a Lead Sourcing & Procurement Analyst. Return a valid JSON array of suppliers only. No preamble. No markdown.' }] },
+    contents: [{ parts: [{ text: prompt }] }],
+    tools: [{ googleSearch: {} }],
+    generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
+  }, model, 'primary');
+
   const data = await res.json();
   const candidate = data?.candidates?.[0];
   const finishReason = candidate?.finishReason || 'unknown';
@@ -353,17 +381,10 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
       ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.`
                    : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
       : scope === 'domestic' ? `IMPORTANT: Only include US-based suppliers. Exclude ALL foreign companies.` : '';
-    const followUp = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt + `\n\nReturn the JSON array now. ${geoReminder} Return ONLY a valid JSON array.` }] }],
-          generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
-        })
-      }
-    );
+    const followUp = await geminiFetch(url, {
+      contents: [{ parts: [{ text: prompt + `\n\nReturn the JSON array now. ${geoReminder} Return ONLY a valid JSON array.` }] }],
+      generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
+    }, model, 'follow-up');
     const followData = await followUp.json();
     const followText = followData?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
     if (followText) { console.log(`Follow-up on ${model} succeeded`); return followText; }
@@ -658,37 +679,20 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       return text;
     }
 
-    // Provider 1: Gemini 2.5 Pro — empirically the strongest for our prompt structure.
+    // Providers 1..N: Gemini cascade (live-search grounded). Each model gets transient-error
+    // retries inside geminiFetch; on a hard failure we fall through to the next model in order.
     if (geminiKey) {
-      try {
-        responseText = await tryGeminiModel('gemini-2.5-pro');
-        if (responseText) usedProvider = 'gemini';
-      } catch (err) {
-        console.warn(`gemini-2.5-pro failed: ${err.message}. Trying Gemini 2.5 Flash...`);
+      for (const model of GEMINI_MODELS) {
+        try {
+          responseText = await tryGeminiModel(model);
+          if (responseText) { usedProvider = 'gemini'; break; }
+        } catch (err) {
+          console.warn(`${model} failed: ${err.message}. Trying next model...`);
+        }
       }
     }
 
-    // Provider 2: Gemini 2.5 Flash — same family as Pro, smaller and faster.
-    if (!responseText && geminiKey) {
-      try {
-        responseText = await tryGeminiModel('gemini-2.5-flash');
-        if (responseText) usedProvider = 'gemini';
-      } catch (err) {
-        console.warn(`gemini-2.5-flash failed: ${err.message}. Trying Gemini 1.5 Flash...`);
-      }
-    }
-
-    // Provider 3: Gemini 1.5 Flash — last live-search fallback.
-    if (!responseText && geminiKey) {
-      try {
-        responseText = await tryGeminiModel('gemini-1.5-flash');
-        if (responseText) usedProvider = 'gemini';
-      } catch (err) {
-        console.warn(`gemini-1.5-flash failed: ${err.message}.`);
-      }
-    }
-
-    // Provider 4: Claude Haiku — offline-knowledge final fallback (no live web).
+    // Final provider: Claude Haiku — offline-knowledge fallback (no live web search → degraded mode).
     if (!responseText && anthropicKey) {
       const prompts = buildPrompts('claude');
       console.log('Using Claude fallback...');
@@ -896,7 +900,8 @@ Return ONLY a valid JSON object. No markdown. No preamble.`;
 app.listen(PORT, () => {
   const hasGemini    = !!process.env.GEMINI_API_KEY;
   const hasAnthropic = !!process.env.ANTHROPIC_API_KEY;
-  console.log(`SupplierScout running on port ${PORT}`);
+  console.log(`SupplierScout ${APP_VERSION} running on port ${PORT}`);
+  console.log(`Gemini cascade: ${GEMINI_MODELS.join(' -> ')} -> Claude Haiku`);
   console.log(`Gemini: ${hasGemini    ? '✓ configured (primary)'  : '✗ not set'}`);
   console.log(`Claude: ${hasAnthropic ? '✓ configured (fallback)' : '✗ not set'}`);
   if (!hasGemini) console.log('⚠ Add GEMINI_API_KEY to Railway for live search grounding');
