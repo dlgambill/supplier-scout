@@ -175,7 +175,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.3</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.4</div>
   </header>
 
   <div id="inputPanel">
@@ -614,6 +614,19 @@ let currentDateFrom='', currentDateTo='';
 // Resets to 0 whenever fresh suppliers come back or a new search is started.
 let consecutiveZeroResults = 0;
 
+// Guards against double-submit. A stray double-click on the launch button used to fire two
+// concurrent /api/search requests (visible in Railway logs as a second full model cascade).
+// While a search is in flight we ignore new submissions and disable the launch button(s).
+let searchInFlight = false;
+function setSearchBusy(busy){
+  searchInFlight = busy;
+  document.querySelectorAll('.btn-launch').forEach(b=>{
+    b.disabled = busy;
+    b.style.opacity = busy ? '0.5' : '';
+    b.style.pointerEvents = busy ? 'none' : '';
+  });
+}
+
 const STEPS={
   domestic:["Searching the web in real time","Aggregating supplier directories & company sites","Extracting & verifying companies","Scoring supplier fit"],
   foreign:["Searching the web in real time","Aggregating international trade sources","Extracting & verifying companies","Scoring supplier fit"],
@@ -844,6 +857,25 @@ function parseClaudeJSON(data) {
   return JSON.parse(raw.slice(start,end+1));
 }
 
+// Reads a fetch Response that is expected to be JSON. Guards against the case where an
+// upstream (Railway edge/proxy) returns an HTML error page — e.g. a 502/504 timeout page —
+// which would otherwise blow up res.json() with the cryptic "Unexpected token '<'". Instead
+// we surface the real HTTP status and a snippet of the body so the failure is legible.
+async function readJsonResponse(res){
+  const ctype=(res.headers.get('content-type')||'').toLowerCase();
+  if(!ctype.includes('application/json')){
+    const text=await res.text().catch(()=> '');
+    const snippet=text.trim().slice(0,140).replace(/\s+/g,' ');
+    if(!res.ok){
+      throw new Error(('Server error '+res.status+(res.statusText?' '+res.statusText:'')).trim()+(snippet?' — '+snippet:''));
+    }
+    throw new Error('Expected JSON but received "'+(ctype||'unknown')+'"'+(snippet?': '+snippet:''));
+  }
+  const data=await res.json();
+  if(!res.ok) throw new Error(data.error||('Server error '+res.status));
+  return data;
+}
+
 async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType){
   const body={
     commodity, scope, certs, countries, hts,
@@ -861,8 +893,7 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     dateTo: currentDateTo
   };
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await res.json();
-  if(data.error) throw new Error(data.error);
+  const data=await readJsonResponse(res);
   const badge=document.getElementById('liveSearchBadge');
   const badgeLabel=document.getElementById('liveSearchBadgeLabel');
   if(data.usedSerpApi){
@@ -882,8 +913,7 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
 async function callEmail(commodity, includeAttach, attachList, dueDate, emailContext){
   const body={commodity, includeAttach, attachList, dueDate: dueDate||'', emailContext: emailContext||''};
   const res=await fetch('/api/email',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-  const data=await res.json();
-  if(data.error) throw new Error(data.error);
+  const data=await readJsonResponse(res);
   return parseClaudeJSON(data);
 }
 
@@ -954,6 +984,7 @@ function renderZeroResultsMessage(canRetry){
 }
 
 async function runSearch(){
+  if(searchInFlight) return;
   const commodity=document.getElementById('commodityInput').value.trim();
   const certs=document.getElementById('certInput').value.trim();
   const hts=document.getElementById('htsInput').value.trim();
@@ -988,6 +1019,7 @@ async function runSearch(){
   document.getElementById('errorPanel').classList.remove('active');
   document.getElementById('inputPanel').style.display='none';
   consecutiveZeroResults = 0; // fresh search — reset the zero-results counter
+  setSearchBusy(true);
   const scope=getScopeFromCountries(currentCountries);
   await _executeSearch(currentCommodity, scope, certs, currentCountries.filter(c=>c!=='USA').join(', '), hts, true);
 }
@@ -1095,10 +1127,14 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
       renderSearchMoreButton();
       showToast('Search failed: '+err.message);
     }
+  }finally{
+    setSearchBusy(false);
   }
 }
 
 async function searchMoreSources(){
+  if(searchInFlight) return;
+  setSearchBusy(true);
   const scope=getScopeFromCountries(currentCountries);
   await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, false);
 }
@@ -1267,6 +1303,7 @@ function getRefineSelectedCountries(){
 }
 
 async function runRefinedSearch(){
+  if(searchInFlight) return;
   const newCommodity=document.getElementById('refineCommodity').value.trim();
   const newCerts=document.getElementById('refineCerts').value.trim();
   const newHts=document.getElementById('refineHts').value.trim();
@@ -1316,6 +1353,7 @@ async function runRefinedSearch(){
   suppliers=[]; emails=[];
   consecutiveZeroResults = 0; // refined search counts as a fresh search
   document.getElementById('resultsPanel').classList.remove('active');
+  setSearchBusy(true);
   const scope=getScopeFromCountries(currentCountries);
   await _executeSearch(currentCommodity, scope, currentCerts, currentCountries.filter(c=>c!=='USA').join(', '), currentHts, true);
 }
