@@ -1,4 +1,11 @@
-// SupplierScout — server.js — v1.5.5
+// SupplierScout — server.js — v1.5.6
+// Changelog v1.5.6:
+//   - geminiFetch(): per-status retry budget. 503 "high demand" now retries once (400ms) then
+//     falls through to the next model, instead of burning ~2s of backoff on a model that's down.
+//     429/500 keep their 2-retry backoff. This cuts worst-case dead time when 2.5-pro is throttled.
+//   - geminiFetch(): added a 30s per-call abort timeout so a single hung Gemini request aborts
+//     and falls through, rather than running long enough for Railway's edge to return an HTML
+//     timeout page (the root cause of the frontend "Unexpected token '<'" crash).
 // Changelog v1.5.5:
 //   - Removed dead gemini-1.5-flash (Google retired all 1.5 models; returns HTTP 404).
 //   - New Gemini cascade: 2.5-pro -> 2.5-flash -> 2.5-flash-lite -> 3.5-flash -> Claude Haiku.
@@ -8,7 +15,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
-const APP_VERSION = 'v1.5.5';
+const APP_VERSION = 'v1.5.6';
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -316,31 +323,58 @@ function isSelfOrSubsidiary(name, targetCompany) {
 // Used in-order by /api/search (per-model fall-through to Claude) and by callGemini (/api/email).
 const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-3.5-flash'];
 
-// HTTP wrapper that retries transient Gemini failures (429 rate-limit, 500, 503 "high demand").
-// These are server-side capacity spikes that usually clear within a second or two, so a couple
-// of short backoff retries on the SAME model avoids cascading straight to Claude unnecessarily.
+// Per-attempt hard timeout (ms). If a single Gemini call hangs past this, we abort and
+// fall through to the next model in the cascade — rather than letting the request run long
+// enough for Railway's edge to return an HTML timeout page (which the browser then can't
+// parse as JSON, surfacing as the cryptic "Unexpected token '<'").
+const GEMINI_TIMEOUT_MS = 30000;
+
+// Retry budget by HTTP status. A 503 "high demand" is a capacity problem on THAT specific
+// model and rarely clears in a second or two, so we retry it at most once (short) before
+// falling through to the next model — the whole point of the cascade is having alternatives.
+// 429 (rate limit) and 500 (transient) do tend to clear, so they keep a longer backoff budget.
+function retryBudget(status) {
+  if (status === 503) return { max: 1, base: 400 };          // one quick retry, then fall through
+  if (status === 429 || status === 500) return { max: 2, base: 700 }; // 700ms, then 1400ms
+  return { max: 0, base: 0 };                                // anything else: non-retryable
+}
+
+// HTTP wrapper that retries transient Gemini failures with a per-status budget and enforces
+// a hard per-call timeout. On timeout / network error we throw so the caller falls through
+// to the next model, instead of hanging.
 async function geminiFetch(url, body, model, label = 'request') {
-  const RETRYABLE = new Set([429, 500, 503]);
-  const MAX_RETRIES = 2; // 3 total attempts
   let lastErr;
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    if (attempt > 0) {
-      const delay = 700 * Math.pow(2, attempt - 1); // 700ms, then 1400ms
-      console.log(`  [${model}] retrying ${label} (attempt ${attempt}/${MAX_RETRIES}) after ${delay}ms`);
-      await new Promise(r => setTimeout(r, delay));
+  let attempt = 0;
+  for (;;) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GEMINI_TIMEOUT_MS);
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      });
+    } catch (e) {
+      clearTimeout(timer);
+      const aborted = e.name === 'AbortError';
+      console.error(`  [${model}] ${label} ${aborted ? `aborted after ${GEMINI_TIMEOUT_MS}ms` : 'network error: ' + e.message}`);
+      // A hung call is unlikely to recover on retry — fall through to the next model.
+      throw new Error(`Gemini ${aborted ? 'timeout' : 'network error'} (${model})`);
     }
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
-    });
+    clearTimeout(timer);
     if (res.ok) return res;
     const errText = await res.text();
     console.error(`  [${model}] HTTP ${res.status} (${label}): ${errText.substring(0, 400)}`);
     lastErr = new Error(`Gemini API error ${res.status}: ${errText.substring(0, 200)}`);
-    if (!(RETRYABLE.has(res.status) && attempt < MAX_RETRIES)) throw lastErr;
+    const { max, base } = retryBudget(res.status);
+    if (attempt >= max) throw lastErr;
+    attempt++;
+    const delay = base * Math.pow(2, attempt - 1);
+    console.log(`  [${model}] retrying ${label} (attempt ${attempt}/${max}) after ${delay}ms (HTTP ${res.status})`);
+    await new Promise(r => setTimeout(r, delay));
   }
-  throw lastErr || new Error(`${model} failed after retries`);
 }
 
 async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
