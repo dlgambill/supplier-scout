@@ -175,7 +175,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.5.4</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.6.0</div>
   </header>
 
   <div id="inputPanel">
@@ -462,6 +462,9 @@ input[type="date"]:focus { border-color:var(--accent); }
           3) Zero-results message with optional retry button
         See renderSearchMoreButton / renderInlineLoadingPanel / renderZeroResultsMessage.
       -->
+      <!-- Grounding sources: the actual web pages Gemini consulted during live search,
+           returned by the server as groundingSources[]. Rendered as a collapsible list. -->
+      <div id="groundingSourcesPanel"></div>
       <div id="suppliersFooter" style="border-top:1px solid var(--border);padding-top:16px;margin-top:16px;"></div>
     </div>
 
@@ -613,6 +616,17 @@ let currentDateFrom='', currentDateTo='';
 // consecutive zero replaces the retry with a "no more sources" message.
 // Resets to 0 whenever fresh suppliers come back or a new search is started.
 let consecutiveZeroResults = 0;
+
+// Web pages Gemini actually consulted while grounding the search (from the server's
+// groundingSources[] field). Accumulated across "Search More Sources" calls, deduped by URI.
+let groundingSources = [];
+function mergeGroundingSources(incoming){
+  if(!Array.isArray(incoming)) return;
+  const seen=new Set(groundingSources.map(s=>s.uri));
+  incoming.forEach(s=>{
+    if(s && s.uri && !seen.has(s.uri)){ seen.add(s.uri); groundingSources.push(s); }
+  });
+}
 
 // Guards against double-submit. A stray double-click on the launch button used to fire two
 // concurrent /api/search requests (visible in Railway logs as a second full model cascade).
@@ -876,7 +890,7 @@ async function readJsonResponse(res){
   return data;
 }
 
-async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType){
+async function callSearch(commodity, scope, certs, countries, hts, imageData, imageType, excludeNames){
   const body={
     commodity, scope, certs, countries, hts,
     sources:currentSources,
@@ -890,10 +904,14 @@ async function callSearch(commodity, scope, certs, countries, hts, imageData, im
     companyGeoCountries: currentCompanyGeoCountries,
     companyContinents: currentContinents,
     dateFrom: currentDateFrom,
-    dateTo: currentDateTo
+    dateTo: currentDateTo,
+    // "Search More Sources" only: names already on screen, so the server can tell the
+    // model DO-NOT-RETURN these and spend its result budget on new companies.
+    excludeNames: excludeNames||[]
   };
   const res=await fetch('/api/search',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
   const data=await readJsonResponse(res);
+  mergeGroundingSources(data.groundingSources);
   const badge=document.getElementById('liveSearchBadge');
   const badgeLabel=document.getElementById('liveSearchBadgeLabel');
   if(data.usedSerpApi){
@@ -1070,7 +1088,8 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
     // Supplier search
     const newSuppliers = await callSearch(commodity, searchScope, certs, countries, hts,
       (pastedImageData&&isFirst)?pastedImageData:null,
-      (pastedImageType&&isFirst)?pastedImageType:null);
+      (pastedImageType&&isFirst)?pastedImageType:null,
+      isFirst?[]:suppliers.map(s=>s.name));
 
     let freshSuppliers = []; // only the newly-added (dedup'd) suppliers
     if(isFirst){
@@ -1105,6 +1124,7 @@ async function _executeSearch(commodity, searchScope, certs, countries, hts, isF
         if(freshSuppliers.length > 0){
           // Append-only render so existing cards don't re-animate.
           appendSupplierCards(freshSuppliers);
+          renderGroundingSources();
           renderSearchMoreButton();
           showToast(freshSuppliers.length+' new supplier'+(freshSuppliers.length===1?'':'s')+' added!');
         } else {
@@ -1391,10 +1411,29 @@ function renderResults(commodity){
   document.getElementById('resultsCount').textContent=suppliers.length+' SUPPLIERS';
   document.getElementById('emailTab').style.display=emails.length?'block':'none';
   renderSupplierCards();
+  renderGroundingSources();
   // Footer starts in the "default button" state. searchMoreSources() will
   // swap it for the inline loading panel and back, depending on outcome.
   renderSearchMoreButton();
   renderEmailCards();
+}
+
+// Collapsible list of the web pages Gemini consulted during grounded search — real
+// evidence links the user can open to verify results. Hidden entirely when the search
+// ran in degraded (Claude, training-data-only) mode and no sources exist.
+function renderGroundingSources(){
+  const panel=document.getElementById('groundingSourcesPanel');
+  if(!panel) return;
+  if(!groundingSources.length){ panel.innerHTML=''; return; }
+  const esc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const links=groundingSources.map(s=>
+    '<a class="card-url" href="'+esc(s.uri)+'" target="_blank" rel="noopener" style="display:block;padding:3px 0;font-size:12px;">&#8599; '+esc(s.title)+'</a>'
+  ).join('');
+  panel.innerHTML=
+    '<details style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px;">'
+    +'<summary style="cursor:pointer;font-family:IBM Plex Mono,monospace;font-size:11px;letter-spacing:1px;color:var(--text3);">GROUNDING SOURCES ('+groundingSources.length+') — pages consulted during live search</summary>'
+    +'<div style="margin-top:8px;">'+links+'</div>'
+    +'</details>';
 }
 
 
@@ -1678,6 +1717,9 @@ function reset(){
   document.querySelectorAll('#sourceCheckboxes .source-check[data-val="ThomasNet"], #sourceCheckboxes .source-check[data-val="ImportYeti"], #sourceCheckboxes .source-check[data-val="Kompass"]').forEach(el=>el.classList.add('selected'));
   currentSources=[];
   suppliers=[]; emails=[];
+  groundingSources=[];
+  const gsPanel=document.getElementById('groundingSourcesPanel');
+  if(gsPanel) gsPanel.innerHTML='';
   document.querySelectorAll('.fit-filter').forEach(f=>f.classList.remove('active'));
   document.querySelector('.fit-filter[data-fit="all"]').classList.add('active');
   // Clear the footer slot too — it'll be re-rendered on the next successful search.
