@@ -1,4 +1,18 @@
-// SupplierScout — server.js — v1.6.0
+// SupplierScout — server.js — v1.7.0
+// Changelog v1.7.0:
+//   - PARALLEL FAN-OUT: /api/search now fires 3 concurrent grounded searches, each with a
+//     different source-angle focus (directories / trade records / regional-niche in commodity
+//     mode; filings / trade records / news-partnerships in company mode), on 3 different
+//     Gemini models (different capacity pools), then merges + dedupes server-side. Roughly
+//     doubles coverage per search at flat latency. Each angle has its own model fallback;
+//     Claude Haiku remains the degraded-mode fallback if every angle fails.
+//   - WEBSITE LIVENESS CHECK: every returned supplier's website gets a parallel HEAD probe
+//     (2.5s timeout, GET retry). Any HTTP response counts as alive (bot-walls included);
+//     DNS failure / timeout marks websiteVerified=false. Flagged, never dropped.
+//   - VERIFICATION PASS: one follow-up grounded call audits up to 15 candidates ("is this a
+//     real company matching its claimed role and location?") and annotates each with
+//     verification {status: confirmed|unverified|mismatch, evidenceUrl, note}. Conservative:
+//     flags only, never drops. Opt out with env VERIFY_PASS=off.
 // Changelog v1.6.0:
 //   - /api/search accepts excludeNames[] (sent by "Search More Sources"): already-found
 //     suppliers are injected into the prompt as a DO-NOT-RETURN list, so follow-up searches
@@ -34,7 +48,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
-const APP_VERSION = 'v1.6.0';
+const APP_VERSION = 'v1.7.0';
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -580,6 +594,152 @@ async function resolveLocations(names, geminiKey) {
   }
 }
 
+// ── Fan-out search angles ───────────────────────────────────────────────────
+// One search used to be one model's one pass over the same obvious sources. Fan-out fires
+// all three angles CONCURRENTLY on three different Gemini models (different capacity pools —
+// also a throttling hedge), each focused on a different slice of the source landscape, then
+// merges and dedupes. Every angle has gemini-3.5-flash as its personal fallback.
+function getFanoutAngles(searchMode) {
+  if (searchMode === 'company') {
+    return [
+      { key: 'filings',  models: ['gemini-2.5-pro', 'gemini-3.5-flash'],
+        directive: 'Focus this search on OFFICIAL & FINANCIAL sources: SEC 10-K "principal suppliers" / "key suppliers" sections, annual reports, investor documents, and the target company\'s own supplier diversity or approved-vendor pages.' },
+      { key: 'trade',    models: ['gemini-2.5-flash', 'gemini-3.5-flash'],
+        directive: 'Focus this search on TRADE RECORDS: ImportYeti and Panjiva bill-of-lading entries naming the target as consignee, customs and shipment data, and import/export records.' },
+      { key: 'news',     models: ['gemini-2.5-flash-lite', 'gemini-3.5-flash'],
+        directive: 'Focus this search on NEWS & PARTNERSHIPS: press releases announcing supplier agreements, contract-manufacturer announcements, and industry reporting on the target\'s supply chain.' }
+    ];
+  }
+  return [
+    { key: 'directory', models: ['gemini-2.5-pro', 'gemini-3.5-flash'],
+      directive: 'Focus this search on SUPPLIER DIRECTORIES: ThomasNet, Kompass, IndustryNet, and MFG.com category listings — extract the specific companies listed within them.' },
+    { key: 'trade',     models: ['gemini-2.5-flash', 'gemini-3.5-flash'],
+      directive: 'Focus this search on TRADE & IMPORT DATA: ImportYeti/Panjiva records, customs data, and companies with verified shipment history for this commodity.' },
+    { key: 'regional',  models: ['gemini-2.5-flash-lite', 'gemini-3.5-flash'],
+      directive: 'Focus this search on REGIONAL & NICHE sources: industry association member lists, regional manufacturer directories, and smaller specialized firms that the big directories under-rank.' }
+  ];
+}
+
+// Stable dedupe key for merging fan-out results ("NIBCO Inc." === "NIBCO").
+function supplierKey(name) {
+  const t = coreTokens(name || '');
+  return t.length ? t.join(' ') : (name || '').toLowerCase().trim();
+}
+
+// ── Website liveness check ──────────────────────────────────────────────────
+// The single best hallucination filter: invented companies almost never have live websites.
+// Probes every supplier's domain in parallel. ANY HTTP response — including 403/405 from
+// bot protection — proves the domain resolves and serves; only DNS failure, connection
+// refusal, or timeout marks it unreachable. Conservative: flags, never drops.
+function normalizeWebsiteUrl(website) {
+  if (!website || typeof website !== 'string') return null;
+  let w = website.trim();
+  if (!w || /\s/.test(w)) return null;
+  if (!/^https?:\/\//i.test(w)) w = 'https://' + w;
+  try {
+    const u = new URL(w);
+    if (!u.hostname.includes('.')) return null;
+    return u.href;
+  } catch { return null; }
+}
+
+async function probeUrl(url, method) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2500);
+  try {
+    const res = await fetch(url, { method, redirect: 'follow', signal: controller.signal });
+    try { if (res.body && res.body.cancel) res.body.cancel(); } catch (e) { /* ignore */ }
+    return true; // any HTTP status = domain is alive
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function checkWebsiteLiveness(suppliers) {
+  const checks = suppliers.map(async (s) => {
+    const url = normalizeWebsiteUrl(s.website);
+    if (!url) { s.websiteVerified = null; return; }
+    try {
+      await probeUrl(url, 'HEAD');
+      s.websiteVerified = true;
+    } catch (e1) {
+      try {
+        await probeUrl(url, 'GET'); // some servers reject HEAD at the connection level
+        s.websiteVerified = true;
+      } catch (e2) {
+        s.websiteVerified = false;
+        console.log(`  [liveness] "${s.name}" website unreachable: ${s.website}`);
+      }
+    }
+  });
+  await Promise.allSettled(checks);
+  const dead = suppliers.filter(s => s.websiteVerified === false).length;
+  console.log(`Website liveness: ${suppliers.length} checked, ${dead} unreachable`);
+}
+
+// ── Verification second pass ────────────────────────────────────────────────
+// One grounded follow-up call that audits the merged results: is each candidate a real
+// company matching its claimed role and location? Annotates verification {status,
+// evidenceUrl, note} per supplier so fit scores become checked claims with evidence links.
+// Conservative by design (see the over-broad-exclusion lesson): flags only, never drops.
+// Non-fatal on any failure. Opt out with env VERIFY_PASS=off.
+async function verifySuppliers(suppliers, contextLabel, geminiKey) {
+  if (!geminiKey || !suppliers.length) return [];
+  const batch = suppliers.slice(0, 15);
+  const model = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+  const list = batch.map(s =>
+    `- name: "${s.name}" | claimed location: "${s.location || 'unknown'}" | website: "${s.website || 'unknown'}" | claimed role: "${(s.specialty || '').replace(/"/g, "'").slice(0, 120)}"`
+  ).join('\n');
+  const prompt = `You are auditing supplier research results for: ${contextLabel}.
+For EACH candidate below, use web search to confirm whether it is a real company matching its claimed role and location.
+
+Candidates:
+${list}
+
+Return ONLY a JSON array (no markdown, no preamble):
+[{"name":"<exact name as given above>","verified":"confirmed|unverified|mismatch","evidenceUrl":"<URL of the specific page that confirms it, or empty string>","note":"<one short sentence>"}]
+Rules:
+- "confirmed" ONLY when a specific web page supports the company + role + location claim.
+- "mismatch" when the company exists but the claimed role or location is wrong.
+- "unverified" when you cannot find supporting evidence either way.
+- Do NOT invent URLs. Include one entry per candidate, every candidate.`;
+  try {
+    const res = await geminiFetch(url, {
+      contents: [{ parts: [{ text: prompt }] }],
+      tools: [{ googleSearch: {} }],
+      generationConfig: { temperature: 0, maxOutputTokens: 8192, thinkingConfig: { thinkingBudget: 1024 } }
+    }, model, 'verification');
+    const data = await res.json();
+    const candidate = data?.candidates?.[0];
+    const text = candidate?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+    if (!text) return [];
+    const arr = parseJSON(text);
+    const map = {};
+    if (Array.isArray(arr)) {
+      for (const it of arr) {
+        if (it && it.name) map[it.name.toLowerCase().trim()] = it;
+      }
+    }
+    let confirmed = 0;
+    for (const s of batch) {
+      const v = map[(s.name || '').toLowerCase().trim()];
+      if (!v) continue;
+      s.verification = {
+        status: ['confirmed', 'unverified', 'mismatch'].includes(v.verified) ? v.verified : 'unverified',
+        evidenceUrl: (typeof v.evidenceUrl === 'string' && /^https?:\/\//i.test(v.evidenceUrl)) ? v.evidenceUrl : '',
+        note: typeof v.note === 'string' ? v.note.slice(0, 200) : ''
+      };
+      if (s.verification.status === 'confirmed') confirmed++;
+    }
+    console.log(`Verification pass: ${confirmed}/${batch.length} confirmed`);
+    return extractGroundingSources(candidate);
+  } catch (e) {
+    console.warn(`Verification pass failed (non-fatal): ${e.message}`);
+    return [];
+  }
+}
+
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
   const geminiKey    = process.env.GEMINI_API_KEY;
@@ -656,8 +816,13 @@ app.post('/api/search', async (req, res) => {
       : `"${cleanedCommodity}" site:thomasnet.com`;
 
     // Build prompt for Gemini (strict "HARD-FAIL" language works well) or Claude (no live search).
-    function buildPrompts(engine) {
+    // `angle` (optional) is a fan-out search angle: its directive narrows THIS call's source
+    // focus so the 3 parallel calls cover different ground instead of racing to the same top hits.
+    function buildPrompts(engine, angle = null) {
       const isClaude = engine === 'claude';
+      const angleBlock = angle
+        ? `\n[SEARCH ANGLE FOCUS]\n${angle.directive}\nOther source types may be used as backup, but PRIORITIZE this angle — a parallel search is covering the other source types. TARGET 8–12 RESULTS from this angle.\n`
+        : '';
 
       const hardFail = 'are HARD-FAILS';
       const zeroTolerance = '[OUTPUT RULES - ZERO TOLERANCE]';
@@ -715,7 +880,7 @@ Perform deep web research to identify verified VENDORS that "${targetCompany}" P
 - Geography Scope: ${geoSelected}
 ${geoDirective}
 ${dateRangeSection}
-${excludeBlock}[DIRECTION OF MONEY — CRITICAL]
+${excludeBlock}${angleBlock}[DIRECTION OF MONEY — CRITICAL]
 Money must flow FROM ${targetCompany} TO the supplier. ${targetCompany} is the BUYER; the supplier is the SELLER receiving payment.
 This means: for retailers (Walmart, Target, Costco), the brands they stock (P&G, Coca-Cola, Tyson, Mattel, etc.) ARE valid suppliers — Walmart pays those brands wholesale. For manufacturers (Boeing, Tesla), the parts and material suppliers are valid. For service companies, IT vendors, contract manufacturers, logistics firms, and packaging suppliers are valid.
 What is NOT valid: ${targetCompany}'s customers (entities ${targetCompany} sells to), competitors, or end consumers.
@@ -782,7 +947,7 @@ No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`j
         prompt = `[GOAL]
 Perform deep web research to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
 
-${excludeBlock}[COMMODITY DATA]
+${excludeBlock}${angleBlock}[COMMODITY DATA]
 - Commodity: "${cleanedCommodity}"
 - Required Certs: ${certText}
 - HTS Code: ${htsText}
@@ -829,49 +994,76 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
       return res.status(400).json({ error: 'companyName is required for company search mode' });
     }
 
-    let responseText;
+    let suppliers = null;
     let usedProvider = null;
     let groundingSources = [];
 
-    async function tryGeminiModel(modelName) {
-      const prompts = buildPrompts('gemini');
-      console.log(`Trying Gemini model: ${modelName}`);
-      const result = await callGeminiModel(prompts.supplierPrompt, geminiKey, modelName, scope, countries, prompts.systemInstruction);
-      return result; // { text, sources }
-    }
-
-    // Providers 1..N: Gemini cascade (live-search grounded). Each model gets transient-error
-    // retries inside geminiFetch; on a hard failure we fall through to the next model in order.
+    // Fan-out: 3 angles in parallel, each with its own model + fallback. An angle that
+    // fails or parses to garbage just contributes nothing — the others still land.
     if (geminiKey) {
-      for (const model of GEMINI_MODELS) {
-        try {
-          const result = await tryGeminiModel(model);
-          if (result && result.text) {
-            responseText = result.text;
-            groundingSources = result.sources || [];
-            usedProvider = 'gemini';
-            console.log(`${model} grounding sources: ${groundingSources.length}`);
-            break;
+      const angles = getFanoutAngles(searchMode);
+      console.log(`Fan-out: launching ${angles.length} parallel search angles (${angles.map(a => a.key).join(', ')})`);
+      const runAngle = async (angle) => {
+        const prompts = buildPrompts('gemini', angle);
+        let lastErr;
+        for (const model of angle.models) {
+          try {
+            const result = await callGeminiModel(prompts.supplierPrompt, geminiKey, model, scope, countries, prompts.systemInstruction);
+            if (result && result.text) {
+              const parsed = parseJSON(result.text);
+              if (Array.isArray(parsed)) {
+                console.log(`  [angle:${angle.key}] ${model}: ${parsed.length} suppliers, ${(result.sources || []).length} grounding sources`);
+                return { suppliers: parsed, sources: result.sources || [] };
+              }
+              throw new Error('parsed non-array');
+            }
+          } catch (err) {
+            lastErr = err;
+            console.warn(`  [angle:${angle.key}] ${model} failed: ${err.message}`);
           }
-        } catch (err) {
-          console.warn(`${model} failed: ${err.message}. Trying next model...`);
         }
+        throw lastErr || new Error(`angle ${angle.key} produced nothing`);
+      };
+
+      const settled = await Promise.allSettled(angles.map(runAngle));
+      const merged = [];
+      const seen = new Set();
+      let anglesLanded = 0;
+      for (const outcome of settled) {
+        if (outcome.status !== 'fulfilled') continue;
+        anglesLanded++;
+        groundingSources.push(...outcome.value.sources);
+        for (const sup of outcome.value.suppliers) {
+          if (!sup || !sup.name) continue;
+          const key = supplierKey(sup.name);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(sup);
+        }
+      }
+      if (merged.length) {
+        suppliers = merged;
+        usedProvider = 'gemini';
+        console.log(`Fan-out merge: ${merged.length} unique suppliers from ${anglesLanded}/${angles.length} angles`);
+      } else {
+        console.warn(`Fan-out: 0/${angles.length} angles produced usable results — falling back`);
       }
     }
 
     // Final provider: Claude Haiku — offline-knowledge fallback (no live web search → degraded mode).
-    if (!responseText && anthropicKey) {
+    if (!suppliers && anthropicKey) {
       const prompts = buildPrompts('claude');
       console.log('Using Claude fallback...');
-      responseText = await callClaude(prompts.supplierPrompt, anthropicKey, true);
+      const claudeText = await callClaude(prompts.supplierPrompt, anthropicKey, true);
+      suppliers = parseJSON(claudeText);
+      if (!Array.isArray(suppliers)) throw new Error('Claude fallback returned non-array output');
       usedProvider = 'claude';
     }
 
-    if (!responseText) throw new Error('All AI providers failed');
+    if (!suppliers) throw new Error('All AI providers failed');
 
-    let suppliers;
+    let responseText;
     try {
-      suppliers = parseJSON(responseText);
       if (Array.isArray(suppliers)) {
         const before = suppliers.length;
         if (searchMode !== 'company') {
@@ -997,10 +1189,23 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
         }
         console.log(`Filter (${searchMode} mode): ${before} → ${suppliers.length} suppliers (scope: ${scope})`);
         suppliers.forEach((s, i) => s.id = i + 1);
+
+        // Liveness: cheap, parallel, provider-independent — runs even in degraded mode.
+        if (suppliers.length) await checkWebsiteLiveness(suppliers);
+
+        // Verification: grounded audit of the merged results. Gemini-only (needs live search).
+        if (suppliers.length && usedProvider === 'gemini' && process.env.VERIFY_PASS !== 'off') {
+          const contextLabel = searchMode === 'company'
+            ? `vendors/suppliers that sell to "${targetCompany}"`
+            : `"${cleanedCommodity}" suppliers (${supplierType || 'both'})`;
+          const verifySources = await verifySuppliers(suppliers, contextLabel, geminiKey);
+          groundingSources.push(...verifySources);
+        }
       }
       responseText = JSON.stringify(suppliers);
     } catch(e) {
       console.warn('Could not apply filters:', e.message);
+      responseText = JSON.stringify(suppliers);
     }
 
     const usedLiveSearch = usedProvider === 'gemini';
