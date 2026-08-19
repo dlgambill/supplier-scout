@@ -175,7 +175,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.7.0</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.7.1</div>
   </header>
 
   <div id="inputPanel">
@@ -622,9 +622,13 @@ let consecutiveZeroResults = 0;
 let groundingSources = [];
 function mergeGroundingSources(incoming){
   if(!Array.isArray(incoming)) return;
-  const seen=new Set(groundingSources.map(s=>s.uri));
+  // Dedupe by displayed domain title (Gemini gives duplicate sites unique redirect URIs).
+  const keyOf=s=>((s.title||s.uri)||'').toLowerCase().trim();
+  const seen=new Set(groundingSources.map(keyOf));
   incoming.forEach(s=>{
-    if(s && s.uri && !seen.has(s.uri)){ seen.add(s.uri); groundingSources.push(s); }
+    if(!s||!s.uri) return;
+    const k=keyOf(s);
+    if(!seen.has(k)){ seen.add(k); groundingSources.push(s); }
   });
 }
 
