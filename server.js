@@ -1,4 +1,8 @@
-// SupplierScout — server.js — v1.7.0
+// SupplierScout — server.js — v1.7.1
+// Changelog v1.7.1:
+//   - Grounding-source dedupe now keys on the displayed domain title (Gemini assigns each
+//     grounding chunk a unique redirect URI even for the same site, so URI-only dedupe let
+//     duplicates through). Applied server-side and in the frontend cross-search merge.
 // Changelog v1.7.0:
 //   - PARALLEL FAN-OUT: /api/search now fires 3 concurrent grounded searches, each with a
 //     different source-angle focus (directories / trade records / regional-niche in commodity
@@ -48,7 +52,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
-const APP_VERSION = 'v1.7.0';
+const APP_VERSION = 'v1.7.1';
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -1210,12 +1214,15 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
 
     const usedLiveSearch = usedProvider === 'gemini';
 
-    // Dedupe grounding sources by URI, cap at 15 — these are the actual web pages Gemini
-    // consulted, surfaced to the UI as clickable evidence.
-    const seenUris = new Set();
+    // Dedupe grounding sources, cap at 15. Gemini assigns each grounding chunk a UNIQUE
+    // redirect URI even when several chunks point at the same site, so dedupe by the
+    // displayed domain title first, URI as fallback.
+    const seenSources = new Set();
     const uniqueSources = groundingSources.filter(s => {
-      if (!s || !s.uri || seenUris.has(s.uri)) return false;
-      seenUris.add(s.uri);
+      if (!s || !s.uri) return false;
+      const key = (s.title || s.uri).toLowerCase().trim();
+      if (seenSources.has(key)) return false;
+      seenSources.add(key);
       return true;
     }).slice(0, 15);
 
