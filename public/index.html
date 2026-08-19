@@ -175,7 +175,7 @@ input[type="date"]:focus { border-color:var(--accent); }
       <div class="logo-mark">S</div>
       <div class="logo-text">Supplier<span>Scout</span></div>
     </div>
-    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.6.0</div>
+    <div class="header-meta">AI-POWERED SOURCING INTELLIGENCE<br>CONDUIT LAB<br>v1.7.0</div>
   </header>
 
   <div id="inputPanel">
@@ -642,10 +642,10 @@ function setSearchBusy(busy){
 }
 
 const STEPS={
-  domestic:["Searching the web in real time","Aggregating supplier directories & company sites","Extracting & verifying companies","Scoring supplier fit"],
-  foreign:["Searching the web in real time","Aggregating international trade sources","Extracting & verifying companies","Scoring supplier fit"],
-  both:["Searching the web in real time","Aggregating domestic & international sources","Extracting & verifying companies","Scoring supplier fit"],
-  company:["Searching trade records, filings & press","Cross-referencing supplier diversity pages","Extracting verified vendor names","Scoring supplier fit"]
+  domestic:["Launching 3 parallel search angles","Directories &#183; trade records &#183; regional sources","Merging & deduplicating results","Checking websites & verifying candidates","Scoring supplier fit"],
+  foreign:["Launching 3 parallel search angles","Directories &#183; trade records &#183; regional sources","Merging & deduplicating results","Checking websites & verifying candidates","Scoring supplier fit"],
+  both:["Launching 3 parallel search angles","Directories &#183; trade records &#183; regional sources","Merging & deduplicating results","Checking websites & verifying candidates","Scoring supplier fit"],
+  company:["Launching 3 parallel search angles","Filings &#183; trade records &#183; press coverage","Merging & deduplicating vendors","Checking websites & verifying candidates","Scoring supplier fit"]
 };
 
 // Mode pills (Commodity vs Company search)
@@ -1473,9 +1473,31 @@ function buildSupplierCard(s){
   const tags=(s.tags||[]).map(t=>'<span class="tag">'+t+'</span>').join('')+(s.certs||[]).map(c=>'<span class="tag cert">'+c+'</span>').join('');
 
   const websiteUrl=s.website?(s.website.startsWith('http')?s.website:'https://'+s.website):'';
+  // Liveness state comes from the server's HEAD/GET probe (v1.7.0):
+  //   true  = domain responded (any HTTP status)   false = DNS fail / timeout   null/undefined = no site listed or probe skipped
+  const liveTag = s.websiteVerified===true
+    ? '<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:#2ecc71;margin-left:4px;">&#10003; site live</span>'
+    : s.websiteVerified===false
+    ? '<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:#e8a020;margin-left:4px;">&#9888; site unreachable — verify</span>'
+    : '<span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span>';
   const websiteHtml=websiteUrl
-    ?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> <span style="font-family:IBM Plex Mono,monospace;font-size:10px;color:var(--text3);margin-left:4px;">— verify before use</span></div>'
+    ?'<div style="margin-top:6px;"><a class="card-url" href="'+websiteUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; '+s.website+'</a> '+liveTag+'</div>'
     :'<div style="margin-top:6px;font-family:IBM Plex Mono,monospace;font-size:11px;color:var(--text3);">Website unknown — search manually</div>';
+
+  // Verification pass (v1.7.0): grounded audit result with an evidence link when confirmed.
+  const v = s.verification;
+  const vColor = v ? (v.status==='confirmed'?'#2ecc71':v.status==='mismatch'?'#e05555':'#7a8499') : '';
+  const vLabel = v ? (v.status==='confirmed'?'VERIFIED':v.status==='mismatch'?'&#9888; MISMATCH':'UNVERIFIED') : '';
+  const verifyBadge = v
+    ? '<span class="tag" style="color:'+vColor+';border:1px solid '+vColor+';background:'+vColor+'18;">'+vLabel+'</span>'
+    : '';
+  const verificationHtml = v
+    ? '<div style="margin-top:6px;font-size:12px;">'
+      +'<span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;color:'+vColor+';">'+vLabel+':</span> '
+      +'<span style="color:var(--text2);">'+(v.note||'')+'</span>'
+      +(v.evidenceUrl?' <a class="card-url" href="'+v.evidenceUrl+'" target="_blank" onclick="event.stopPropagation()">&#8599; evidence</a>':'')
+      +'</div>'
+    : '';
   const sourceUrl=getSourceSearchUrl(s.source);
   const sourceHtml='<div style="margin-top:4px;"><span style="font-family:IBM Plex Mono,monospace;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--text3);">Search on: </span><a class="card-url" href="'+sourceUrl+'" target="_blank" onclick="event.stopPropagation()">'+s.source+' &#8599;</a></div>';
   const verifyUrl='https://www.google.com/search?q='+encodeURIComponent('"'+s.name+'" '+currentCommodity+' manufacturer');
@@ -1487,11 +1509,12 @@ function buildSupplierCard(s){
     +'<div class="card-body">'
       +'<div class="card-name">'+s.name+'</div>'
       +'<div class="card-meta"><span class="card-location">&#128205; '+s.location+'</span><span class="card-source">'+s.source+'</span></div>'
-      +'<div class="card-tags">'+tags+'</div>'
+      +'<div class="card-tags">'+verifyBadge+tags+'</div>'
       +verifyBtn
       +'<div class="card-expand">'
         +'<p>'+s.specialty+'</p>'
         +'<p class="note">'+s.fitReason+'</p>'
+        +verificationHtml
         +websiteHtml
         +sourceHtml
       +'</div>'
