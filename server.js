@@ -1,4 +1,23 @@
-// SupplierScout — server.js — v1.5.6
+// SupplierScout — server.js — v1.6.0
+// Changelog v1.6.0:
+//   - /api/search accepts excludeNames[] (sent by "Search More Sources"): already-found
+//     suppliers are injected into the prompt as a DO-NOT-RETURN list, so follow-up searches
+//     spend their result budget on NEW companies instead of re-finding the same top hits.
+//   - Grounding sources: Gemini's groundingMetadata (the actual web pages it consulted) is
+//     now extracted and returned as groundingSources[] — real evidence URLs, not discarded.
+//   - Location rescue (company mode): suppliers that would be dropped for an unknown/
+//     unclassifiable location are batched into one gemini-2.5-flash-lite lookup that resolves
+//     their HQ; any that then pass the geo filters are recovered instead of silently lost.
+//   - thinkingConfig.thinkingBudget=4096 on 2.5-family models so reasoning tokens stop eating
+//     the 16384 maxOutputTokens budget (a cause of empty responses / follow-up calls).
+//   - Empty-response follow-up call now sets responseMimeType application/json (allowed there
+//     because the follow-up drops the googleSearch tool).
+//   - /api/email no longer runs search grounding (emails don't need live web search) and uses
+//     JSON response mode — faster, cheaper, more reliable parsing.
+//   - callClaude() now has a 30s abort timeout (same Railway-edge hang protection Gemini has).
+//   - isSelfOrSubsidiary() rewritten: token-based matching instead of raw substring. Target
+//     "Ford" no longer excludes "Ford Meter Box"; "Walmart de Mexico" is still excluded for
+//     target "Walmart" via corporate-suffix / geo-marker token analysis.
 // Changelog v1.5.6:
 //   - geminiFetch(): per-status retry budget. 503 "high demand" now retries once (400ms) then
 //     falls through to the next model, instead of burning ~2s of backoff on a model that's down.
@@ -15,7 +34,7 @@ const express = require('express');
 const path = require('path');
 const app = express();
 const PORT = process.env.PORT || 3000;
-const APP_VERSION = 'v1.5.6';
+const APP_VERSION = 'v1.6.0';
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
@@ -301,14 +320,36 @@ function isNonSupplierEntity(name) {
   return false;
 }
 
+// Corporate suffixes that carry no identity ("Tesla Inc" === "Tesla").
+const CORP_SUFFIX_TOKENS = new Set(['inc','incorporated','llc','llp','lp','corp','corporation',
+  'co','company','companies','ltd','limited','group','holdings','holding','plc','gmbh','sa',
+  'srl','ag','bv','nv','kk','pty','pte','sas','spa','ab','oy','the','enterprises']);
+// Geo / subsidiary markers: "Walmart de Mexico", "Siemens USA" are the same entity family.
+const GEO_MARKER_TOKENS = new Set(['de','del','da','of','usa','us','america','americas','north',
+  'south','europe','emea','asia','apac','pacific','international','intl','global','worldwide',
+  'canada','mexico','uk','japan','china','india','brasil','brazil','deutschland','latam']);
+
+function coreTokens(s) {
+  return (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/)
+    .filter(t => t && !CORP_SUFFIX_TOKENS.has(t));
+}
+
+// True only when the candidate is the target itself or an obvious regional arm/subsidiary.
+// Token-based on purpose: the old substring check ("a.includes(b)") excluded any company whose
+// name merely CONTAINED the target — e.g. target "Ford" wrongly killed "Ford Meter Box".
+// Now: exact core-token match, OR target tokens as a prefix where every leftover token is a
+// corporate/geo marker ("Walmart de Mexico" → leftovers [de, mexico] → excluded;
+// "Ford Meter Box" → leftovers [meter, box] → kept).
 function isSelfOrSubsidiary(name, targetCompany) {
   if (!name || !targetCompany) return false;
-  const a = name.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-  const b = targetCompany.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/\s+/g, ' ').trim();
-  if (!a || !b) return false;
-  if (a === b) return true;
-  if (a.includes(b) && b.length >= 4) return true;
-  if (b.includes(a) && a.length >= 4) return true;
+  const a = coreTokens(name);
+  const b = coreTokens(targetCompany);
+  if (!a.length || !b.length) return false;
+  if (a.join(' ') === b.join(' ')) return true;
+  if (a.length > b.length && b.every((t, i) => a[i] === t)) {
+    const leftovers = a.slice(b.length);
+    if (leftovers.every(t => GEO_MARKER_TOKENS.has(t))) return true;
+  }
   return false;
 }
 
@@ -377,12 +418,12 @@ async function geminiFetch(url, body, model, label = 'request') {
   }
 }
 
-async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='') {
+async function callGemini(prompt, geminiKey, scope='', countries='', systemInstruction='', useSearch=true) {
   for (const model of GEMINI_MODELS) {
     try {
       console.log(`Trying Gemini model: ${model}`);
-      const text = await callGeminiModel(prompt, geminiKey, model, scope, countries, systemInstruction);
-      if (text) return text;
+      const result = await callGeminiModel(prompt, geminiKey, model, scope, countries, systemInstruction, useSearch);
+      if (result && result.text) return result.text;
     } catch (err) {
       console.warn(`${model} failed: ${err.message}. Trying next model...`);
     }
@@ -390,15 +431,41 @@ async function callGemini(prompt, geminiKey, scope='', countries='', systemInstr
   throw new Error('All Gemini models failed');
 }
 
-async function callGeminiModel(prompt, geminiKey, model, scope='', countries='', systemInstruction='') {
+// Pull the real web sources Gemini consulted out of groundingMetadata. These are the
+// evidence pages behind the answer — previously discarded, now surfaced to the frontend.
+function extractGroundingSources(candidate) {
+  const chunks = candidate?.groundingMetadata?.groundingChunks;
+  if (!Array.isArray(chunks)) return [];
+  const out = [];
+  for (const c of chunks) {
+    if (c?.web?.uri) out.push({ title: c.web.title || c.web.uri, uri: c.web.uri });
+  }
+  return out;
+}
+
+// Build generationConfig per model. 2.5-family models spend "thinking" tokens out of the same
+// maxOutputTokens budget; uncapped, 2.5-pro can think its way to an empty visible response
+// (finishReason MAX_TOKENS) — which is what triggers our expensive follow-up call. Cap it.
+function buildGenConfig(model, jsonMode = false) {
+  const cfg = { temperature: 0.1, maxOutputTokens: 16384 };
+  if (model.startsWith('gemini-2.5')) cfg.thinkingConfig = { thinkingBudget: 4096 };
+  if (jsonMode) cfg.responseMimeType = 'application/json'; // NOT combinable with googleSearch tool
+  return cfg;
+}
+
+// Returns { text, sources } — sources are grounding URLs (empty when useSearch=false or
+// the model didn't ground).
+async function callGeminiModel(prompt, geminiKey, model, scope='', countries='', systemInstruction='', useSearch=true) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
 
-  const res = await geminiFetch(url, {
+  const body = {
     system_instruction: { parts: [{ text: systemInstruction || 'You are a Lead Sourcing & Procurement Analyst. Return a valid JSON array of suppliers only. No preamble. No markdown.' }] },
     contents: [{ parts: [{ text: prompt }] }],
-    tools: [{ googleSearch: {} }],
-    generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
-  }, model, 'primary');
+    generationConfig: buildGenConfig(model, !useSearch)
+  };
+  if (useSearch) body.tools = [{ googleSearch: {} }];
+
+  const res = await geminiFetch(url, body, model, 'primary');
 
   const data = await res.json();
   const candidate = data?.candidates?.[0];
@@ -415,17 +482,23 @@ async function callGeminiModel(prompt, geminiKey, model, scope='', countries='',
       ? (countries ? `IMPORTANT: Only include suppliers from: ${countries}. Exclude ALL US companies.`
                    : `IMPORTANT: Only include non-US international suppliers. Exclude ALL US/American companies.`)
       : scope === 'domestic' ? `IMPORTANT: Only include US-based suppliers. Exclude ALL foreign companies.` : '';
+    // Follow-up has no googleSearch tool, so JSON response mode is allowed here — the model
+    // is forced to emit parseable JSON instead of prose.
     const followUp = await geminiFetch(url, {
       contents: [{ parts: [{ text: prompt + `\n\nReturn the JSON array now. ${geoReminder} Return ONLY a valid JSON array.` }] }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 16384 }
+      generationConfig: buildGenConfig(model, true)
     }, model, 'follow-up');
     const followData = await followUp.json();
-    const followText = followData?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
-    if (followText) { console.log(`Follow-up on ${model} succeeded`); return followText; }
+    const followCandidate = followData?.candidates?.[0];
+    const followText = followCandidate?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+    if (followText) {
+      console.log(`Follow-up on ${model} succeeded`);
+      return { text: followText, sources: extractGroundingSources(followCandidate) };
+    }
     throw new Error(`${model} returned empty response (finishReason: ${finishReason})`);
   }
   console.log(`${model} response received (first 200 chars):`, text.substring(0, 200));
-  return text;
+  return { text, sources: extractGroundingSources(candidate) };
 }
 
 // ── Claude fallback ────────────────────────────────────────────────────────
@@ -433,20 +506,32 @@ async function callClaude(prompt, anthropicKey, expectArray = true) {
   const system = expectArray
     ? 'Return only a valid JSON array. No markdown. No preamble.'
     : 'Return only a valid JSON object. No markdown. No preamble.';
-  const res = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': anthropicKey,
-      'anthropic-version': '2023-06-01'
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20251001',
-      max_tokens: 8000,
-      system,
-      messages: [{ role: 'user', content: prompt }]
-    })
-  });
+  // Same hard timeout Gemini calls get: a hung request must abort before Railway's edge
+  // returns an HTML timeout page.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30000);
+  let res;
+  try {
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': anthropicKey,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 8000,
+        system,
+        messages: [{ role: 'user', content: prompt }]
+      }),
+      signal: controller.signal
+    });
+  } catch (e) {
+    clearTimeout(timer);
+    throw new Error(e.name === 'AbortError' ? 'Claude timeout after 30s' : 'Claude network error: ' + e.message);
+  }
+  clearTimeout(timer);
   const data = await res.json();
   if (data.error) throw new Error(data.error.message || 'Claude error');
   return (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
@@ -461,6 +546,40 @@ function cleanCommodity(commodity) {
     .replace(/\s{2,}/g, ' ').trim().replace(/^,|,$/g, '').trim();
 }
 
+// ── Location rescue ─────────────────────────────────────────────────────────
+// Company-mode geo filters used to silently DROP any supplier whose location came back as
+// "N/A"/"Unknown" — real finds thrown away over a missing field. This batches those
+// candidates into ONE cheap flash-lite grounded lookup ("where is each HQ?") so they can be
+// re-tested against the geo filters instead of lost. Failure here is non-fatal: on any error
+// we just return an empty map and the candidates stay dropped (previous behavior).
+async function resolveLocations(names, geminiKey) {
+  if (!names.length || !geminiKey) return {};
+  const model = 'gemini-2.5-flash-lite';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+  const prompt = `For each company below, return its headquarters location as "City, ST" (US) or "City, Country" (non-US). If you cannot determine it, use "Unknown".\n\nCompanies:\n${names.map(n => `- ${n}`).join('\n')}\n\nReturn ONLY a JSON array: [{"name":"<exact name as given>","location":"City, ST or City, Country or Unknown"}]. No markdown. No preamble.`;
+  try {
+    const res = await geminiFetch(url, {
+      contents: [{ parts: [{ text: prompt }] }],
+      tools: [{ googleSearch: {} }],
+      generationConfig: { temperature: 0, maxOutputTokens: 4096, thinkingConfig: { thinkingBudget: 0 } }
+    }, model, 'location-rescue');
+    const data = await res.json();
+    const text = data?.candidates?.[0]?.content?.parts?.filter(p => p.text)?.map(p => p.text)?.join('') || '';
+    if (!text) return {};
+    const arr = parseJSON(text);
+    const map = {};
+    if (Array.isArray(arr)) {
+      for (const item of arr) {
+        if (item && item.name && item.location) map[item.name.toLowerCase().trim()] = String(item.location).trim();
+      }
+    }
+    return map;
+  } catch (e) {
+    console.warn(`Location rescue failed (non-fatal): ${e.message}`);
+    return {};
+  }
+}
+
 // ── /api/search ────────────────────────────────────────────────────────────
 app.post('/api/search', async (req, res) => {
   const geminiKey    = process.env.GEMINI_API_KEY;
@@ -471,8 +590,18 @@ app.post('/api/search', async (req, res) => {
   }
 
   try {
-    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries, companyContinents, dateFrom, dateTo } = req.body;
+    const { commodity, scope, certs, countries, hts, sources, selectedCountries, supplierType, imageData, imageType, mode, companyName, companyGeoScope, companyGeoCountries, companyContinents, dateFrom, dateTo, excludeNames } = req.body;
     const cleanedCommodity = cleanCommodity(commodity || '');
+
+    // "Search More Sources" sends the names already on screen. Injecting them as a
+    // DO-NOT-RETURN list makes the model spend its 10–20 result budget on NEW companies
+    // instead of re-finding the same top hits (which the frontend would dedupe to zero).
+    const excludeList = Array.isArray(excludeNames)
+      ? excludeNames.filter(n => typeof n === 'string' && n.trim()).map(n => n.trim()).slice(0, 80)
+      : [];
+    const excludeBlock = excludeList.length
+      ? `\n[ALREADY FOUND — DO NOT RETURN]\nThe following companies have ALREADY been found in a previous search. Do NOT include them or their subsidiaries again. Find DIFFERENT companies — dig into less obvious sources (regional directories, trade records, smaller firms, page-2+ results):\n${excludeList.map(n => `- ${n}`).join('\n')}\n`
+      : '';
     const searchMode = (mode === 'company') ? 'company' : 'commodity';
     const targetCompany = (companyName || '').trim();
 
@@ -586,7 +715,7 @@ Perform deep web research to identify verified VENDORS that "${targetCompany}" P
 - Geography Scope: ${geoSelected}
 ${geoDirective}
 ${dateRangeSection}
-[DIRECTION OF MONEY — CRITICAL]
+${excludeBlock}[DIRECTION OF MONEY — CRITICAL]
 Money must flow FROM ${targetCompany} TO the supplier. ${targetCompany} is the BUYER; the supplier is the SELLER receiving payment.
 This means: for retailers (Walmart, Target, Costco), the brands they stock (P&G, Coca-Cola, Tyson, Mattel, etc.) ARE valid suppliers — Walmart pays those brands wholesale. For manufacturers (Boeing, Tesla), the parts and material suppliers are valid. For service companies, IT vendors, contract manufacturers, logistics firms, and packaging suppliers are valid.
 What is NOT valid: ${targetCompany}'s customers (entities ${targetCompany} sells to), competitors, or end consumers.
@@ -653,7 +782,7 @@ No preamble. No conversational filler. No markdown formatting blocks (no \`\`\`j
         prompt = `[GOAL]
 Perform deep web research to identify verified ${geoSelected} manufacturers/distributors for the following commodity.
 
-[COMMODITY DATA]
+${excludeBlock}[COMMODITY DATA]
 - Commodity: "${cleanedCommodity}"
 - Required Certs: ${certText}
 - HTS Code: ${htsText}
@@ -702,15 +831,13 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
 
     let responseText;
     let usedProvider = null;
+    let groundingSources = [];
 
     async function tryGeminiModel(modelName) {
       const prompts = buildPrompts('gemini');
       console.log(`Trying Gemini model: ${modelName}`);
-      const text = await callGeminiModel(prompts.supplierPrompt, geminiKey, modelName, scope, countries, prompts.systemInstruction);
-      if (text) {
-        console.log(`${modelName} response received (first 200 chars): ${text.substring(0, 200)}`);
-      }
-      return text;
+      const result = await callGeminiModel(prompts.supplierPrompt, geminiKey, modelName, scope, countries, prompts.systemInstruction);
+      return result; // { text, sources }
     }
 
     // Providers 1..N: Gemini cascade (live-search grounded). Each model gets transient-error
@@ -718,8 +845,14 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
     if (geminiKey) {
       for (const model of GEMINI_MODELS) {
         try {
-          responseText = await tryGeminiModel(model);
-          if (responseText) { usedProvider = 'gemini'; break; }
+          const result = await tryGeminiModel(model);
+          if (result && result.text) {
+            responseText = result.text;
+            groundingSources = result.sources || [];
+            usedProvider = 'gemini';
+            console.log(`${model} grounding sources: ${groundingSources.length}`);
+            break;
+          }
         } catch (err) {
           console.warn(`${model} failed: ${err.message}. Trying next model...`);
         }
@@ -770,6 +903,19 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
             return !t || t === 'n/a' || t === 'na' || t === 'unknown' || t === 'not specified' || t === 'not provided' || t === '-' || t === 'tbd';
           };
 
+          // Pull unknown-location suppliers ASIDE (instead of letting the filters below drop
+          // them) so they can be location-rescued after filtering. Only worth doing when a
+          // geo filter is actually active and Gemini is available for the lookup.
+          const geoFilterActive = companyGeoScope === 'domestic' || companyGeoScope === 'foreign' || (validContinents && validContinents.length > 0);
+          let rescueCandidates = [];
+          if (geoFilterActive && geminiKey) {
+            rescueCandidates = suppliers.filter(s => isUnknownLocation(s.location)).slice(0, 15);
+            if (rescueCandidates.length) {
+              suppliers = suppliers.filter(s => !isUnknownLocation(s.location));
+              console.log(`Location rescue: ${rescueCandidates.length} unknown-location candidates set aside`);
+            }
+          }
+
           if (companyGeoScope === 'domestic') {
             suppliers = suppliers.filter(s => {
               const loc = s.location || '';
@@ -815,6 +961,35 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
             });
             console.log(`Continent filter (${validContinents.join(',')}): ${suppliers.length} remaining`);
           }
+
+          // Rescue pass: resolve HQs for the set-aside candidates in one batch call, then
+          // re-test them against the SAME geo constraints. Passers rejoin the results.
+          if (rescueCandidates.length) {
+            const locMap = await resolveLocations(rescueCandidates.map(s => s.name), geminiKey);
+            const passesCompanyGeo = (loc) => {
+              if (isUnknownLocation(loc)) return false;
+              if (companyGeoScope === 'domestic' && !isUSLocation(loc)) return false;
+              if (companyGeoScope === 'foreign' && isUSLocation(loc)) return false;
+              if (validContinents && validContinents.length > 0) {
+                const continent = classifyContinent(loc);
+                if (!continent || !validContinents.includes(continent)) return false;
+              }
+              return true;
+            };
+            let rescued = 0;
+            for (const s of rescueCandidates) {
+              const resolved = locMap[s.name.toLowerCase().trim()];
+              if (resolved && passesCompanyGeo(resolved)) {
+                s.location = resolved;
+                suppliers.push(s);
+                rescued++;
+                console.log(`  [rescued] "${s.name}" — resolved location: ${resolved}`);
+              } else {
+                console.log(`  [rescue failed] "${s.name}" — ${resolved ? 'resolved to out-of-scope: ' + resolved : 'location still unknown'}`);
+              }
+            }
+            console.log(`Location rescue: ${rescued}/${rescueCandidates.length} recovered`);
+          }
         }
         if (supplierType && supplierType !== 'both') {
           suppliers = filterBySupplierType(suppliers, supplierType);
@@ -830,13 +1005,23 @@ GEOGRAPHY REQUIREMENT: Return ONLY ${geoSelected} suppliers. Do NOT include any 
 
     const usedLiveSearch = usedProvider === 'gemini';
 
+    // Dedupe grounding sources by URI, cap at 15 — these are the actual web pages Gemini
+    // consulted, surfaced to the UI as clickable evidence.
+    const seenUris = new Set();
+    const uniqueSources = groundingSources.filter(s => {
+      if (!s || !s.uri || seenUris.has(s.uri)) return false;
+      seenUris.add(s.uri);
+      return true;
+    }).slice(0, 15);
+
     res.json({
       claudeData: {
         content: [{ type: 'text', text: responseText }]
       },
       usedSerpApi: usedLiveSearch,
       usedGemini: usedProvider === 'gemini',
-      usedProvider
+      usedProvider,
+      groundingSources: uniqueSources
     });
 
   } catch (err) {
@@ -908,7 +1093,10 @@ Return ONLY a valid JSON object. No markdown. No preamble.`;
 
     if (geminiKey) {
       try {
-        responseText = await callGemini(emailPrompt, geminiKey);
+        // useSearch=false: drafting an email needs no live web search — skipping the
+        // googleSearch tool cuts latency and lets JSON response mode kick in.
+        responseText = await callGemini(emailPrompt, geminiKey, '', '',
+          'You are a professional procurement communications writer. Return only a valid JSON object. No markdown. No preamble.', false);
       } catch (e) {
         console.warn('Gemini email failed, falling back to Claude:', e.message);
         responseText = null;
